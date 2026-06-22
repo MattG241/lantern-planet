@@ -51,12 +51,25 @@
   }
   #counter {
     top: calc(14px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-    padding: 9px 18px; font-size: 15px; letter-spacing: 0.4px;
+    padding: 9px 18px; font-size: 15px; letter-spacing: 0.4px; white-space: nowrap; max-width: 94vw;
     text-shadow: 0 1px 2px rgba(0,0,0,0.35);
   }
   #counter b { color: var(--warm); font-weight: 600; display: inline-block; }
   #counter b.pop { animation: pop 0.4s ease; }
   @keyframes pop { 0%{transform:scale(1);} 40%{transform:scale(1.6); color:#ffcf7a;} 100%{transform:scale(1);} }
+
+  #deliverHint {
+    top: calc(54px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    padding: 6px 14px; font-size: 12.5px; white-space: nowrap; opacity: 0.92;
+  }
+  #deliverHint b { color: var(--warm); }
+  #pop {
+    position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%); z-index: 13;
+    pointer-events: none; font-size: 30px; font-weight: 700; letter-spacing: 0.5px;
+    color: #ffe6a0; text-shadow: 0 2px 16px rgba(255, 180, 90, 0.65), 0 1px 3px rgba(0,0,0,0.4);
+    opacity: 0; transition: opacity 0.18s ease, transform 0.7s ease;
+  }
+  #pop.show { opacity: 1; transform: translate(-50%, -110%); }
 
   #hint {
     bottom: calc(14px + env(safe-area-inset-bottom)); left: calc(14px + env(safe-area-inset-left)); padding: 10px 14px;
@@ -159,27 +172,29 @@
 <div id="grain"></div>
 
 <div id="hud">
-  <div id="counter" class="hud-card">Lanterns lit: <b id="lanternCount">0</b> / <b id="lanternTotal">0</b></div>
+  <div id="counter" class="hud-card">Parcels: <b id="score">0</b> &nbsp;&middot;&nbsp; <span style="opacity:0.72">lanterns <b id="lanternCount">0</b>/<b id="lanternTotal">0</b></span></div>
+  <div id="deliverHint" class="hud-card">Carry the parcel to the glowing beacon &middot; <b id="dist">--</b></div>
   <div id="muteBtn" class="hud-card" title="Toggle sound">~</div>
   <div id="hint" class="hud-card">
-    <span>WASD</span> / arrows to walk the planet<br>
-    <span>Drag</span> to look &middot; <span>Wheel</span> to zoom<br>
-    <span>Shift</span> stroll &middot; <span>Space</span> hop
+    <span>WASD</span> walk &middot; <span>click</span> free-look<br>
+    <span>Wheel</span> zoom &middot; <span>Shift</span> stroll &middot; <span>Space</span> hop<br>
+    <span>F</span> full screen
   </div>
 </div>
 
 <div id="finale"></div>
+<div id="pop"></div>
 
 <div id="joystick"><div class="joy-base"></div><div class="joy-knob" id="joyKnob"></div></div>
 
 <div id="intro">
   <div class="intro-card">
     <h1>LANTERN PLANET</h1>
-    <div class="sub">A tiny round world to wander at golden hour</div>
+    <div class="sub">Deliver the post around a tiny round world</div>
     <div class="controls">
-      <span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> walk &nbsp;&middot;&nbsp; drag to look<br>
-      <span class="k">Shift</span> stroll &nbsp;&middot;&nbsp; <span class="k">Space</span> hop &nbsp;&middot;&nbsp; wheel to zoom<br>
-      Stroll around the little town and light every lantern.
+      <span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> walk &nbsp;&middot;&nbsp; click for free-look<br>
+      <span class="k">Shift</span> stroll &nbsp;&middot;&nbsp; <span class="k">Space</span> hop &nbsp;&middot;&nbsp; wheel zoom &nbsp;&middot;&nbsp; <span class="k">F</span> full screen<br>
+      Carry each parcel to the glowing beacon to deliver it.
     </div>
     <button id="beginBtn">BEGIN</button>
     <div class="loadnote">A wisp will keep you company. There is no hurry.</div>
@@ -356,10 +371,11 @@ const InkGradeShader = {
     uWobble: { value: 1.3 },
     uPost: { value: 30.0 },
     uSat: { value: 0.94 },
+    uNight: { value: 0.0 },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
   fragmentShader: [
-    'uniform sampler2D tDiffuse; uniform vec2 texel; uniform float uInk; uniform float uWobble; uniform float uPost; uniform float uSat; varying vec2 vUv;',
+    'uniform sampler2D tDiffuse; uniform vec2 texel; uniform float uInk; uniform float uWobble; uniform float uPost; uniform float uSat; uniform float uNight; varying vec2 vUv;',
     'float lum(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }',
     'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }',
     'void main(){',
@@ -384,6 +400,10 @@ const InkGradeShader = {
     '  c += vec3(0.05,0.13,0.12) * (1.0 - L) * 0.5;',                // lift shadows toward teal
     '  c *= mix(vec3(1.0), vec3(1.02,0.99,0.93), L*0.3);',           // warm the highlights
     '  c = mix(c, vec3(0.14,0.12,0.12), ink);',                      // composite ink lines
+    '  vec3 nightC = c * vec3(0.42,0.49,0.68);',                     // cool + dark (kept navigable)
+    '  c = mix(c, nightC, uNight * 0.85);',
+    '  float vig = smoothstep(1.1, 0.42, distance(vUv, vec2(0.5)));',
+    '  c *= mix(1.0, 0.64 + vig * 0.36, uNight);',
     '  gl_FragColor = vec4(clamp(c,0.0,1.0), 1.0);',
     '}',
   ].join('\n'),
@@ -842,6 +862,16 @@ function makeStall(seed) {
   const awning = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.1, 1.5), toonMat(awn, { rim: 0.1 })); awning.position.set(0, 2.0, 0.15); awning.rotation.x = -0.3; awning.castShadow = true; g.add(awning);
   return g;
 }
+function makeMailbox() {
+  const g = new THREE.Group();
+  const red = toonMat('#cf4a3a', { rim: 0.2 });
+  const dark = toonMat('#3a2c24', { rim: 0.15 });
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.3, 8), dark); post.position.y = 0.65; post.castShadow = true; g.add(post);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.85), red); box.position.y = 1.45; box.castShadow = true; box.receiveShadow = true; g.add(box);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 0.02), dark); slot.position.set(0, 1.6, 0.44); g.add(slot);
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.28, 0.02), toonMat('#e0b040')); flag.position.set(0.3, 1.62, 0.2); flag.castShadow = true; g.add(flag);
+  return g;
+}
 
 // ----------------------------------------------------------------------------
 // Paper lanterns (the gentle goal) - lit by proximity
@@ -1000,6 +1030,26 @@ function makePaperLantern(dir) {
   }
 }
 
+// ---- Mailboxes: delivery destinations spread across the world ----
+const mailboxes = [];
+{
+  let placed = 0, guard = 0;
+  while (placed < 14 && guard < 260) {
+    guard++;
+    let dir;
+    if (placed < 5) dir = dirNear(townDir, 0.45 + placed * 0.12);
+    else if (placed < 9) dir = dirNear(new THREE.Vector3().crossVectors(townDir, sunDir).normalize(), 0.4 + (placed - 5) * 0.14);
+    else dir = randDir();
+    if (dir.dot(townDir) > Math.cos(0.12)) continue; // not in the plaza centre
+    if (!freeSpot(dir, 0.02)) continue;
+    const mb = makeMailbox();
+    placeOnPlanet(mb, dir, { faceDir: tangentToward(dir, townDir) });
+    scene.add(mb); addCollider(mb.position, 0.7); claim(dir, 0.015);
+    mailboxes.push({ pos: mb.position.clone(), dir: dir.clone().normalize() });
+    placed++;
+  }
+}
+
 // Trees scattered over the planet (mostly green, a little sakura), denser, avoiding towns
 for (let i = 0; i < Q.trees; i++) {
   const dir = randDir();
@@ -1076,6 +1126,49 @@ function placeCloud(cl) { const u = cl.userData; cl.position.copy(u.dir).multipl
   }
 }
 function updateClouds(dt) { for (const cl of clouds) { const u = cl.userData; u.dir.applyAxisAngle(u.axis, u.speed * dt).normalize(); placeCloud(cl); } for (const s of spinners) s.rotation.z += dt * 0.55; }
+
+// ---- Day / night cycle ----
+let dayTime = 0.18;                 // 0=sunrise, .25=noon, .5=sunset, .75=midnight
+const DAY_PERIOD = 170;             // seconds per full day
+let nightBoost = 0.5;               // how strongly lanterns/fireflies pop (rises at night)
+const _eastDir = new THREE.Vector3().crossVectors(townDir, new THREE.Vector3(0, 1, 0));
+if (_eastDir.lengthSq() < 0.01) _eastDir.set(1, 0, 0);
+_eastDir.normalize();
+const _dayCol = new THREE.Color('#fff4e6'), _duskCol = new THREE.Color('#ff9a52');
+const _hemiDay = new THREE.Color('#f2f2ea'), _hemiNight = new THREE.Color('#3b4a72');
+let stars;
+{
+  const N = isMobile ? 360 : 650, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u), r = 470;
+    pos[i * 3] = s * Math.cos(th) * r; pos[i * 3 + 1] = u * r; pos[i * 3 + 2] = s * Math.sin(th) * r;
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({ color: 0xfff3d6, size: 2.0, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  m.userData.outlineParameters = { visible: false };
+  stars = new THREE.Points(geo, m); stars.userData.outlineParameters = { visible: false }; scene.add(stars);
+}
+const _sunNow = new THREE.Vector3();
+function updateDayNight(dt) {
+  dayTime = (dayTime + dt / DAY_PERIOD) % 1;
+  const p = dayTime * Math.PI * 2;
+  const elev = Math.sin(p);                                   // +1 noon, -1 midnight
+  const day = THREE.MathUtils.smoothstep(elev, -0.10, 0.32);  // 0 night .. 1 day
+  const night = 1 - day;
+  const dusk = Math.pow(1 - Math.min(1, Math.abs(elev) / 0.4), 2);
+  // sun arcs over the town: rise (east) -> overhead -> set (west) -> below
+  _sunNow.copy(townDir).multiplyScalar(elev).addScaledVector(_eastDir, Math.cos(p)).normalize();
+  sunDir.copy(_sunNow);
+  sun.position.copy(sunDir).multiplyScalar(140);
+  sun.intensity = 1.75 * Math.max(0, elev * 0.85 + 0.12);
+  sun.color.copy(_dayCol).lerp(_duskCol, dusk);
+  hemi.intensity = 0.40 + day * 1.0;
+  hemi.color.copy(_hemiNight).lerp(_hemiDay, day);
+  ambient.intensity = 0.24 + day * 0.40;
+  nightBoost = 0.4 + night * 1.4;
+  if (stars) stars.material.opacity = Math.max(0, night - 0.15);
+  inkGrade.uniforms.uNight.value = night;
+}
 
 // Scattered low bushes for ground texture (instanced for perf)
 {
@@ -1185,6 +1278,61 @@ const eyeR = new THREE.Sprite(eyeMat.clone()); eyeR.scale.set(0.15, 0.15, 1); ey
 wisp.add(eyeL); wisp.add(eyeR);
 scene.add(wisp);
 const wispState = { idleTimer: 0, celebrate: 0 };
+
+// ---- Delivery game: the parcel you carry + the beacon over the target mailbox ----
+const parcel = new THREE.Group();
+{
+  const pbox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 0.5), toonMat('#caa06a', { rim: 0.2 })); pbox.castShadow = true; parcel.add(pbox);
+  parcel.add(new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.46, 0.09), toonMat('#b04a3a')));
+  parcel.add(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.46, 0.54), toonMat('#b04a3a')));
+  parcel.position.set(0, 1.15, 0.5);
+  traveler.add(parcel);
+}
+const beacon = new THREE.Group();
+{
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 16, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffcf3a, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  pillar.material.userData.outlineParameters = { visible: false }; pillar.position.y = 8; beacon.add(pillar);
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.85, 1.6, 4), toonMat('#ffd24a', { emissive: '#ffb020', emissiveIntensity: 1.3 }));
+  arrow.rotation.x = Math.PI; arrow.position.y = 4.2; arrow.castShadow = true; beacon.add(arrow);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.2, 24), new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+  ring.material.userData.outlineParameters = { visible: false }; ring.rotation.x = -Math.PI / 2; ring.position.y = 0.1; beacon.add(ring);
+  beacon.userData = { pillar, arrow, ring };
+  scene.add(beacon);
+}
+let deliveries = 0;
+let currentTarget = null;
+const scoreEl = document.getElementById('score');
+const distEl = document.getElementById('dist');
+const popEl = document.getElementById('pop');
+const DELIVER_RADIUS = 4.2;
+function pickNewTarget() {
+  if (mailboxes.length === 0) return;
+  let next = currentTarget;
+  for (let t = 0; t < 24 && next === currentTarget; t++) next = mailboxes[Math.floor(Math.random() * mailboxes.length)];
+  currentTarget = next;
+  placeOnPlanet(beacon, currentTarget.dir, {});
+}
+function updateDelivery(dt) {
+  if (!currentTarget) return;
+  beacon.userData.arrow.position.y = 4.2 + Math.sin(windClock * 3) * 0.3;
+  beacon.userData.arrow.rotation.y += dt * 1.6;
+  beacon.userData.pillar.material.opacity = 0.42 + Math.sin(windClock * 2.5) * 0.12;
+  const rs = 1 + Math.sin(windClock * 2.5) * 0.12; beacon.userData.ring.scale.set(rs, rs, rs);
+  const dx = currentTarget.pos.x - travelerPivot.position.x, dy = currentTarget.pos.y - travelerPivot.position.y, dz = currentTarget.pos.z - travelerPivot.position.z;
+  const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (distEl) distEl.textContent = Math.round(d) + 'm';
+  if (d < DELIVER_RADIUS) {
+    deliveries++;
+    if (scoreEl) { scoreEl.textContent = deliveries; scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
+    spawnPuff(currentTarget.pos, currentTarget.dir);
+    lanternChime(Math.min(Math.max(0, deliveries - 1), 7));
+    wispState.celebrate = 1.5; player.idleTime = 0;
+    if (popEl) { popEl.textContent = '+1 Delivered!'; popEl.classList.remove('show'); requestAnimationFrame(() => popEl.classList.add('show')); setTimeout(() => popEl.classList.remove('show'), 1100); }
+    pickNewTarget();
+  }
+}
+pickNewTarget();
 const TRAIL_N = 12; const wispTrail = [];
 for (let i = 0; i < TRAIL_N; i++) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT_TEX, color: 0x9fd8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
@@ -1308,14 +1456,25 @@ function updatePuffs(dt, up) {
 // Input
 // ----------------------------------------------------------------------------
 const keys = {};
-window.addEventListener('keydown', (e) => { keys[e.code] = true; if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault(); }, { passive: false });
+function toggleFullscreen() {
+  const el = document.documentElement;
+  if (!document.fullscreenElement) { (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el); }
+  else { (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document); }
+}
+window.addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'KeyF') toggleFullscreen(); if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault(); }, { passive: false });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
 const orbit = { yaw: 0, pitch: 0.64, dist: isMobile ? 23 : 17, targetDist: isMobile ? 23 : 17 };
 let dragging = false, lastX = 0, lastY = 0, dragPointerId = null;
 const canvas = renderer.domElement;
-canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; dragging = true; lastX = e.clientX; lastY = e.clientY; dragPointerId = e.pointerId; try { canvas.setPointerCapture(e.pointerId); } catch (err) {} }, { passive: true });
-canvas.addEventListener('pointermove', (e) => { if (!dragging || e.pointerType === 'touch') return; const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; rotateCamYaw(-dx * 0.005); orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.004, 0.12, 1.4); }, { passive: true });
+// Pointer-lock free mouselook: look with the mouse while walking with WASD (no button held).
+// Click the scene to engage, Esc to release. Drag-look still works when not locked.
+let pointerLocked = false;
+canvas.addEventListener('click', () => { if (started && !isMobile && !pointerLocked && canvas.requestPointerLock) canvas.requestPointerLock(); });
+document.addEventListener('pointerlockchange', () => { pointerLocked = (document.pointerLockElement === canvas); });
+window.addEventListener('mousemove', (e) => { if (!pointerLocked) return; rotateCamYaw(-e.movementX * 0.0022); orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + e.movementY * 0.0022, 0.12, 1.4); });
+canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch' || pointerLocked) return; dragging = true; lastX = e.clientX; lastY = e.clientY; dragPointerId = e.pointerId; try { canvas.setPointerCapture(e.pointerId); } catch (err) {} }, { passive: true });
+canvas.addEventListener('pointermove', (e) => { if (!dragging || pointerLocked || e.pointerType === 'touch') return; const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; rotateCamYaw(-dx * 0.005); orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.004, 0.12, 1.4); }, { passive: true });
 window.addEventListener('pointerup', (e) => { if (e.pointerId === dragPointerId) { dragging = false; dragPointerId = null; } });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); orbit.targetDist = THREE.MathUtils.clamp(orbit.targetDist + e.deltaY * 0.016, 8, 120); }, { passive: false });
 
@@ -1370,7 +1529,7 @@ window.addEventListener('touchend', (e) => {
 if (isMobile) {
   document.getElementById('hint').innerHTML = '<span>Left</span> half to walk<br><span>Right</span> half to look<br><span>Pinch</span> to zoom out to the planet';
   const ic = document.querySelector('#intro .controls');
-  if (ic) ic.innerHTML = 'Drag the <span class="k">left</span> half to walk,<br>the <span class="k">right</span> half to look, <span class="k">pinch</span> to zoom.<br>Light every lantern as you wander.';
+  if (ic) ic.innerHTML = 'Drag the <span class="k">left</span> half to walk,<br>the <span class="k">right</span> half to look, <span class="k">pinch</span> to zoom.<br>Take each parcel to the glowing beacon.';
 }
 
 // ----------------------------------------------------------------------------
@@ -1393,11 +1552,13 @@ function animate() {
   let dt = clock.getDelta(); dt = Math.min(dt, 0.05); if (!isFinite(dt) || dt <= 0) dt = 0.016;
   windClock += dt;
   const wind = 0.4 + Math.sin(windClock * 0.23) * 0.22 + Math.sin(windClock * 0.07) * 0.13;
+  updateDayNight(dt);
   updateMovement(dt);
   updateCamera(dt);
   updateCharacterAnim(dt);
   updateWisp(dt);
   updateLanterns(dt);
+  updateDelivery(dt);
   updateParticles(dt, wind);
   updateClouds(dt);
   updatePuffs(dt, _up.copy(playerDir));
@@ -1535,10 +1696,8 @@ function updateWisp(dt) {
   _wside.crossVectors(_up, facingTangent).normalize();
   _wdesired.copy(travelerPivot.position).addScaledVector(_up, 3.0 + Math.sin(windClock * 1.5) * 0.25).addScaledVector(_wside, 1.4);
   const movePressed = player.speed > 0.5 || touchMove.active;
-  if (!movePressed && player.idleTime > 6 && litCount < lanterns.length) {
-    let best = null, bestD = Infinity;
-    for (const L of lanterns) { if (L.lit) continue; const d = L.worldPos.distanceToSquared(travelerPivot.position); if (d < bestD) { bestD = d; best = L; } }
-    if (best) { _wdesired.copy(best.worldPos).addScaledVector(best.dir, 1.6 + Math.sin(windClock * 2) * 0.3); }
+  if (!movePressed && player.idleTime > 5 && currentTarget) {
+    _wdesired.copy(currentTarget.pos).addScaledVector(currentTarget.dir, 2.0 + Math.sin(windClock * 2) * 0.3);
   }
   if (wispState.celebrate > 0) { wispState.celebrate -= dt; const a = (1 - wispState.celebrate / 1.2) * Math.PI * 2; _wdesired.addScaledVector(_wside, Math.cos(a) * 1.3).addScaledVector(_up, 1.0 + Math.sin(a) * 1.2); }
   wisp.position.x = THREE.MathUtils.damp(wisp.position.x, _wdesired.x, 4, dt);
@@ -1569,7 +1728,7 @@ function updateLanterns(dt) {
       L.glow.material.opacity = L.litT * 0.85; L.glow.scale.setScalar(3.5 + L.litT * 2);
     } else {
       const fl = 1 + Math.sin(windClock * 6 + i) * 0.06;
-      L.bodyMat.emissiveIntensity = 1.45 * fl; L.glow.material.opacity = 0.8 * fl;
+      L.bodyMat.emissiveIntensity = (1.2 + nightBoost) * fl; L.glow.material.opacity = (0.55 + nightBoost * 0.35) * fl;
     }
   }
   manageDynamicLights();
@@ -1586,7 +1745,7 @@ function manageDynamicLights() {
   _litSorted.sort((a, b) => a.worldPos.distanceToSquared(travelerPivot.position) - b.worldPos.distanceToSquared(travelerPivot.position));
   for (let i = 0; i < MAX_DYNAMIC_LIGHTS; i++) {
     const pl = dynamicLights[i], L = _litSorted[i];
-    if (L) { pl.position.copy(L.worldPos); const flick = 1 + Math.sin(windClock * 6 + i) * 0.06; pl.intensity = (L.litT < 1 ? L.litT * 3 : 2.8 * flick); }
+    if (L) { pl.position.copy(L.worldPos); const flick = 1 + Math.sin(windClock * 6 + i) * 0.06; pl.intensity = (L.litT < 1 ? L.litT * 3 : (2.0 + nightBoost) * flick); }
     else pl.intensity = 0;
   }
 }
@@ -1603,7 +1762,7 @@ function updateParticles(dt, wind) {
     fp.array[i*3+2] = base[i*3+2] + Math.cos(phase[i] * 0.8) * 0.6;
   }
   fp.needsUpdate = true;
-  fireflies.material.opacity = 0.82 + Math.sin(windClock * 0.6) * 0.12 + litCount * 0.02;
+  fireflies.material.opacity = Math.min(1, 0.5 + nightBoost * 0.26 + Math.sin(windClock * 0.6) * 0.1 + litCount * 0.015);
 
   // petals fall toward the planet centre, drift, recycle near the player when they land
   const pp = petals.geometry.attributes.position; const pdata = petals.userData.data;
@@ -1669,12 +1828,14 @@ frameInitialCamera();
 document.getElementById('beginBtn').addEventListener('click', () => {
   if (started) return; started = true; initAudio();
   if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume();
+  const fsEl = document.documentElement;
+  (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen || (() => {})).call(fsEl);
   introEl.classList.add('hidden'); setTimeout(() => { introEl.style.display = 'none'; }, 1200);
   running = true; clock.getDelta(); animate();
 });
 
 // initial render so the world shows behind the intro
-outlineEffect.render(scene, camera);
+composer.render();
 
 // small debug hook (used for verification screenshots; harmless otherwise)
 window.__game = {
@@ -1690,6 +1851,14 @@ window.__game = {
     for (const c of colliders) { const dx = travelerPivot.position.x - c.x, dy = travelerPivot.position.y - c.y, dz = travelerPivot.position.z - c.z; const g = Math.sqrt(dx*dx+dy*dy+dz*dz) - (c.r + PLAYER_R); if (g < minGap) minGap = g; }
     return { litCount, minGap: Math.round(minGap * 100) / 100, dir: [playerDir.x, playerDir.y, playerDir.z] };
   },
+  setDay: (t) => { dayTime = ((t % 1) + 1) % 1; return dayTime; },
+  warpToTarget: () => {
+    if (!currentTarget) return { deliveries };
+    playerDir.copy(currentTarget.dir); camForward.copy(_eastDir);
+    for (let i = 0; i < 4; i++) { updateMovement(0.016); updateCamera(0.016); updateDelivery(0.016); }
+    return { deliveries };
+  },
+  get deliveries() { return deliveries; },
 };
 </script>
 </body>
