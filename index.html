@@ -628,7 +628,7 @@ const SOFT_TEX = radialTexture('#ffffff', '#ffffff');
 // The planet (displaced sphere, toon material, vertex-coloured grass + town)
 // ----------------------------------------------------------------------------
 const townDir = new THREE.Vector3(0.18, 0.62, 0.77).normalize(); // where the town sits
-const TOWN_COS = Math.cos(0.30); // angular radius of the town ground patch
+const TOWN_COS = Math.cos(0.40); // angular radius of the town ground patch (bigger plaza for the grown town)
 
 const planetGeo = new THREE.SphereGeometry(PLANET_R, 180, 180);
 {
@@ -789,7 +789,7 @@ function makeFacadeTexture(idx) {
   const mw = s * 0.18, mh = s * 0.16;
   for (let r2 = 0; r2 < 3; r2++) for (let cc = 0; cc < 3; cc++) {
     const wx = s * 0.14 + cc * (s * 0.28), wy = s * 0.07 + r2 * (s * 0.30);
-    const lit = ((idx * 7 + r2 * 3 + cc) % 4) === 0;
+    const lit = ((idx * 7 + r2 * 3 + cc) % 3) === 0;
     x.fillStyle = '#5e4d3e'; x.fillRect(wx - 3, wy - 3, mw + 6, mh + 6);
     x.fillStyle = lit ? '#ffd98a' : '#9fb6be'; x.fillRect(wx, wy, mw, mh);
     x.strokeStyle = '#5e4d3e'; x.lineWidth = 2;
@@ -1009,20 +1009,25 @@ function makePaperLantern(dir) {
   streetAxis.addScaledVector(up, -streetAxis.dot(up)).normalize();
   const sideAxis = new THREE.Vector3().crossVectors(up, streetAxis).normalize();
   // pack the town: shops down both sides of the street, two rows deep
-  for (let i = -3; i <= 3; i++) {
+  // Spacing math: r=1.9 colliders need ~0.070rad apart. Keep PITCH + row gaps ABOVE that,
+  // and freeSpot+claim (0.034+0.034=0.068) BELOW PITCH so every slot fills (no checkerboard holes).
+  const ROWS = isMobile ? [0.072, 0.150] : [0.066, 0.140, 0.214]; // 3rd row desktop only
+  const SPAN = isMobile ? 3 : 4;                                  // 7 (mobile) / 9 (desktop) columns
+  const PITCH = 0.082;
+  for (let i = -SPAN; i <= SPAN; i++) {
     for (const side of [-1, 1]) {
-      for (const row of [0.072, 0.138]) {
+      for (const row of ROWS) {
         const dir = up.clone()
-          .applyAxisAngle(sideAxis, i * 0.072)     // along the street
+          .applyAxisAngle(sideAxis, i * PITCH)     // along the street
           .applyAxisAngle(streetAxis, side * row)  // step to a side / back row
           .normalize();
-        if (!freeSpot(dir, 0.042)) continue;
-        const b = makeBuilding(100 + i * 7 + (side > 0 ? 3 : 0) + (row > 0.1 ? 17 : 0));
-        const faceTarget = up.clone().applyAxisAngle(sideAxis, i * 0.072).normalize();
+        if (!freeSpot(dir, 0.034)) continue;
+        const b = makeBuilding(100 + i * 7 + (side > 0 ? 3 : 0) + (row > 0.18 ? 17 : row > 0.10 ? 29 : 0));
+        const faceTarget = up.clone().applyAxisAngle(sideAxis, i * PITCH).normalize();
         placeOnPlanet(b, dir, { faceDir: tangentToward(dir, faceTarget) });
         scene.add(b);
-        addCollider(b.position, 1.7);
-        claim(dir, 0.038);
+        addCollider(b.position, 1.9);
+        claim(dir, 0.034);
       }
     }
   }
@@ -1083,7 +1088,8 @@ function makePaperLantern(dir) {
   const hStreet = (Math.abs(hUp.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
   hStreet.addScaledVector(hUp, -hStreet.dot(hUp)).normalize();
   const hSide = new THREE.Vector3().crossVectors(hUp, hStreet).normalize();
-  for (let i = -2; i <= 2; i++) for (const side of [-1, 1]) {
+  const HSPAN = isMobile ? 2 : 3;
+  for (let i = -HSPAN; i <= HSPAN; i++) for (const side of [-1, 1]) {
     const dir = hUp.clone().applyAxisAngle(hSide, i * 0.07).applyAxisAngle(hStreet, side * 0.08).normalize();
     if (!freeSpot(dir, 0.045)) continue;
     const b = makeBuilding(200 + i * 5 + (side > 0 ? 2 : 0));
@@ -1119,7 +1125,8 @@ function makePaperLantern(dir) {
   const hS = (Math.abs(hUp.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
   hS.addScaledVector(hUp, -hS.dot(hUp)).normalize();
   const hSide = new THREE.Vector3().crossVectors(hUp, hS).normalize();
-  for (let i = -2; i <= 2; i++) for (const side of [-1, 1]) {
+  const HSPAN = isMobile ? 2 : 3;
+  for (let i = -HSPAN; i <= HSPAN; i++) for (const side of [-1, 1]) {
     const dir = hUp.clone().applyAxisAngle(hSide, i * 0.07).applyAxisAngle(hS, side * 0.08).normalize();
     if (!freeSpot(dir, 0.045)) continue;
     const b = makeBuilding(300 + i * 5 + (side > 0 ? 2 : 0));
@@ -1151,7 +1158,7 @@ const mailboxes = [];
 // Trees scattered over the planet (mostly green, a little sakura), denser, avoiding towns
 for (let i = 0; i < Q.trees; i++) {
   const dir = randDir();
-  if (dir.dot(townDir) > Math.cos(0.34)) continue; // keep the main town clear-ish
+  if (dir.dot(townDir) > Math.cos(0.42)) continue; // keep the (now bigger) main town clear-ish
   if (!freeSpot(dir, 0.036)) continue;
   const sakura = rnd() < 0.16;
   const t = makeTree((_seed >>> 3) % 7, sakura);
@@ -1162,7 +1169,7 @@ for (let i = 0; i < Q.trees; i++) {
 // a cluster of sakura near the town edge
 for (let i = 0; i < 8; i++) {
   const dir = dirNear(townDir, 0.5);
-  if (dir.dot(townDir) > Math.cos(0.33)) continue;
+  if (dir.dot(townDir) > Math.cos(0.40)) continue;
   if (!freeSpot(dir, 0.045)) continue;
   const t = makeTree((_seed >>> 2) % 7, true);
   placeOnPlanet(t, dir, { spin: rnd() * 6.28, yOffset: -0.2 });
@@ -1364,6 +1371,242 @@ document.getElementById('lanternTotal').textContent = lanterns.length;
 // ----------------------------------------------------------------------------
 // Traveler (capsule body, head, straw hat) - oriented to the surface each frame
 // ----------------------------------------------------------------------------
+// ============================================================================
+// Market dressing + a bigger, inhabited night town (villagers, smoke, lantern arch)
+// ============================================================================
+function makeLanternArch(dirA, dirB) {
+  const g = new THREE.Group();
+  const postMat = toonMat('#4a3a2a');
+  const bulbMat = toonMat('#e8b46a', { emissive: '#ff9a3a', emissiveIntensity: 1.5, rim: 0.3 });
+  const A = dirA.clone().multiplyScalar(surfaceRadius(dirA));
+  const B = dirB.clone().multiplyScalar(surfaceRadius(dirB));
+  const span = A.distanceTo(B);
+  const post = new THREE.CylinderGeometry(0.1, 0.12, 5.2, 6);
+  const pA = new THREE.Mesh(post, postMat); pA.position.set(-span / 2, 2.6, 0); pA.castShadow = true; g.add(pA);
+  const pB = new THREE.Mesh(post, postMat); pB.position.set(span / 2, 2.6, 0); pB.castShadow = true; g.add(pB);
+  const bulbGeo = new THREE.SphereGeometry(0.2, 8, 8);
+  const N = Math.max(5, Math.round(span / 1.1));
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, x = (t - 0.5) * span, sag = Math.sin(t * Math.PI) * 1.3;
+    const b = new THREE.Mesh(bulbGeo, bulbMat); b.position.set(x, 5.0 - sag, 0); g.add(b);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xffb060, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7, fog: false }));
+    glow.material.userData.outlineParameters = { visible: false };
+    glow.scale.set(1.5, 1.5, 1); glow.position.copy(b.position); g.add(glow);
+  }
+  return g;
+}
+function makeBench() {
+  const g = new THREE.Group();
+  const wood = toonMat('#6a4a32', { rim: 0.18 });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 0.5), wood); seat.position.y = 0.6; seat.castShadow = true; g.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 0.12), wood); back.position.set(0, 0.95, -0.2); back.castShadow = true; g.add(back);
+  for (const sx of [-0.8, 0.8]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.6, 0.5), wood); l.position.set(sx, 0.3, 0); g.add(l); }
+  return g;
+}
+function makeCrates() {
+  const g = new THREE.Group();
+  const m = toonMat('#a07440', { rim: 0.16 });
+  const c = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+  for (const [x, y, z] of [[0, 0.4, 0], [0.85, 0.4, 0.1], [0.2, 1.2, -0.1]]) { const b = new THREE.Mesh(c, m); b.position.set(x, y, z); b.castShadow = true; b.receiveShadow = true; g.add(b); }
+  return g;
+}
+
+// ---- Ambient chimney/stall smoke: its own soft pool (never steals delivery puffs) ----
+const SMOKE_POOL = isMobile ? 10 : 20; const smoke = []; const smokeAnchors = [];
+for (let i = 0; i < SMOKE_POOL; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT_TEX, color: 0x9aa6be, blending: THREE.NormalBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
+  s.material.userData.outlineParameters = { visible: false };
+  s.visible = false; scene.add(s); smoke.push({ sprite: s, life: 0, vel: new THREE.Vector3() });
+}
+function addSmokeAnchor(dir, h) { const d = dir.clone().normalize(); smokeAnchors.push({ pos: d.clone().multiplyScalar(surfaceRadius(d) + h), up: d }); }
+let _smokeC = 0, _smokeT = 0;
+function updateSmoke(dt) {
+  _smokeT -= dt;
+  if (_smokeT <= 0 && smokeAnchors.length) {
+    _smokeT = 0.5 + Math.random() * 0.5;
+    const a = smokeAnchors[(Math.random() * smokeAnchors.length) | 0];
+    const p = smoke[_smokeC]; _smokeC = (_smokeC + 1) % SMOKE_POOL;
+    p.life = 1; p.sprite.visible = true;
+    p.sprite.position.copy(a.pos).addScaledVector(a.up, Math.random() * 0.3);
+    p.vel.copy(a.up).multiplyScalar(0.65 + Math.random() * 0.4);
+    p.vel.x += (Math.random() - 0.5) * 0.25; p.vel.z += (Math.random() - 0.5) * 0.25;
+  }
+  for (const p of smoke) {
+    if (p.life <= 0) continue;
+    p.life -= dt * 0.2;
+    if (p.life <= 0) { p.sprite.visible = false; continue; }
+    p.sprite.position.addScaledVector(p.vel, dt);
+    p.vel.multiplyScalar(0.99);
+    p.sprite.material.opacity = Math.sin(p.life * Math.PI) * 0.3;
+    p.sprite.scale.setScalar(1.2 + (1 - p.life) * 4.0);
+  }
+}
+
+// ---- Market dressing: a lit lantern arch over the street + benches/crates in the plaza ----
+{
+  const up = townDir.clone();
+  const streetAxis = (Math.abs(up.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
+  streetAxis.addScaledVector(up, -streetAxis.dot(up)).normalize();
+  const sideAxis = new THREE.Vector3().crossVectors(up, streetAxis).normalize();
+  const archA = up.clone().applyAxisAngle(sideAxis, -0.05).applyAxisAngle(streetAxis, 0.052).normalize();
+  const archB = up.clone().applyAxisAngle(sideAxis, -0.05).applyAxisAngle(streetAxis, -0.052).normalize();
+  const arch = makeLanternArch(archA, archB);
+  const mid = archA.clone().add(archB).normalize();
+  placeOnPlanet(arch, mid, { faceDir: tangentToward(mid, up.clone().applyAxisAngle(sideAxis, 0.1).normalize()) });
+  scene.add(arch);
+  addCollider(archA.clone().multiplyScalar(surfaceRadius(archA)), 0.4);
+  addCollider(archB.clone().multiplyScalar(surfaceRadius(archB)), 0.4);
+  const dress = [
+    { d: up.clone().applyAxisAngle(sideAxis, 0.10).applyAxisAngle(streetAxis, 0.060), f: makeBench, r: 0.7 },
+    { d: up.clone().applyAxisAngle(sideAxis, -0.10).applyAxisAngle(streetAxis, -0.060), f: makeBench, r: 0.7 },
+    { d: up.clone().applyAxisAngle(sideAxis, 0.15).applyAxisAngle(streetAxis, -0.055), f: makeCrates, r: 0.7 },
+  ];
+  for (const o of dress) {
+    const dir = o.d.normalize();
+    if (!freeSpot(dir, 0.02)) continue;
+    const obj = o.f();
+    placeOnPlanet(obj, dir, { faceDir: tangentToward(dir, up), spin: Math.random() * 0.6 });
+    scene.add(obj); addCollider(obj.position, o.r); claim(dir, 0.018);
+  }
+  // smoke anchors at the town centre + a couple of shop roofs
+  addSmokeAnchor(townDir, 6.0);
+  addSmokeAnchor(up.clone().applyAxisAngle(sideAxis, 0.18).applyAxisAngle(streetAxis, 0.10).normalize(), 5.2);
+  addSmokeAnchor(up.clone().applyAxisAngle(sideAxis, -0.22).applyAxisAngle(streetAxis, -0.08).normalize(), 5.2);
+}
+
+// ---- Villagers: shared geometry/materials built once; they wander the streets at night ----
+const VILL_BODY = new THREE.CapsuleGeometry(0.26, 0.42, 4, 8);
+const VILL_HEAD = new THREE.SphereGeometry(0.20, 10, 8);
+const VILL_HAT = new THREE.ConeGeometry(0.34, 0.26, 10);
+const VILL_LIMB = new THREE.CapsuleGeometry(0.08, 0.26, 3, 6);
+const VILL_ROBES = [
+  toonMat('#7a5a8a', { rim: 0.3, emissive: '#241a2e', emissiveIntensity: 0.2 }),
+  toonMat('#4a6a8a', { rim: 0.3, emissive: '#1a2230', emissiveIntensity: 0.2 }),
+  toonMat('#8a5a4a', { rim: 0.3, emissive: '#2a1814', emissiveIntensity: 0.2 }),
+  toonMat('#5a7a5a', { rim: 0.3, emissive: '#18241a', emissiveIntensity: 0.2 }),
+];
+const VILL_SKIN = toonMat('#e2b48c', { rim: 0.26 });
+const villagers = [];
+function makeVillager(robe) {
+  const g = new THREE.Group();
+  const mat = VILL_ROBES[robe % VILL_ROBES.length];
+  const body = new THREE.Mesh(VILL_BODY, mat); body.position.y = 0.62; g.add(body);
+  const head = new THREE.Mesh(VILL_HEAD, VILL_SKIN); head.position.y = 1.06; g.add(head);
+  const hat = new THREE.Mesh(VILL_HAT, mat); hat.position.y = 1.22; g.add(hat);
+  const mk = (px, py) => { const p = new THREE.Group(); p.position.set(px, py, 0); const m = new THREE.Mesh(VILL_LIMB, mat); m.position.y = -0.21; p.add(m); g.add(p); return p; };
+  const legL = mk(-0.11, 0.42), legR = mk(0.11, 0.42), armL = mk(-0.26, 0.78), armR = mk(0.26, 0.78);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xffb464, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.5, fog: false }));
+  glow.material.userData.outlineParameters = { visible: false };
+  glow.scale.set(1.1, 1.1, 1); glow.position.y = 0.7; g.add(glow);
+  g.traverse(o => { o.castShadow = false; o.receiveShadow = false; });
+  scene.add(g);
+  return { g, legL, legR, armL, armR, glow, dir: new THREE.Vector3(), home: new THREE.Vector3(), heading: new THREE.Vector3(), speed: 0.9 + Math.random() * 0.7, phase: Math.random() * 6.28, bob: 0, leash: 0.06 + Math.random() * 0.05, stuck: 0, pause: 0 };
+}
+// private keep-out read ONLY by villagers (never the player's colliders[])
+const villagerBlockers = [];
+function buildVillagerBlockers() {
+  for (const c of colliders) {
+    const keep = Math.asin(Math.min(0.99, (c.r + 0.6) / PLANET_R));
+    const len = Math.hypot(c.x, c.y, c.z) || 1;
+    villagerBlockers.push({ x: c.x / len, y: c.y / len, z: c.z / len, cos: Math.cos(keep) });
+  }
+}
+function villagerBlocked(dir) {
+  for (let i = 0; i < villagerBlockers.length; i++) { const b = villagerBlockers[i]; if (dir.x * b.x + dir.y * b.y + dir.z * b.z > b.cos) return true; }
+  return false;
+}
+buildVillagerBlockers(); // snapshot every collider placed so far (town/hamlets/dressing/mailboxes/rocks)
+{
+  const VILLAGER_N = isMobile ? 6 : 14;
+  const eastish = new THREE.Vector3().crossVectors(townDir, new THREE.Vector3(0, 1, 0));
+  if (eastish.lengthSq() < 0.01) eastish.set(1, 0, 0);
+  eastish.normalize();
+  const cross2 = new THREE.Vector3().crossVectors(townDir, eastish).normalize();
+  const REGIONS = [
+    { c: townDir.clone(), ang: 0.30, w: isMobile ? 4 : 9 },                                   // most of them in the big main town
+    { c: eastish.clone().applyAxisAngle(cross2, 1.1).normalize(), ang: 0.18, w: isMobile ? 1 : 3 },
+    { c: cross2.clone().applyAxisAngle(eastish, 1.1).normalize(), ang: 0.18, w: isMobile ? 1 : 2 },
+  ];
+  const total = REGIONS.reduce((s, r) => s + r.w, 0);
+  let made = 0, guard = 0;
+  while (made < VILLAGER_N && guard < VILLAGER_N * 40) {
+    guard++;
+    let pick = Math.random() * total, reg = REGIONS[0];
+    for (const r of REGIONS) { if ((pick -= r.w) <= 0) { reg = r; break; } }
+    const home = dirNearM(reg.c, reg.ang * 0.85);
+    if (villagerBlocked(home)) continue;                 // never spawn inside a building footprint
+    if (home.dot(townDir) > Math.cos(0.10)) continue;    // keep off the plaza-centre run lane
+    const v = makeVillager(made);
+    v.dir.copy(home); v.home.copy(home);
+    const t = (Math.abs(home.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
+    t.addScaledVector(home, -t.dot(home)).normalize();
+    const az = Math.random() * Math.PI * 2, bb = new THREE.Vector3().crossVectors(home, t);
+    v.heading.copy(t).multiplyScalar(Math.cos(az)).addScaledVector(bb, Math.sin(az)).normalize();
+    placeOnPlanet(v.g, v.dir, { faceDir: v.heading });
+    villagers.push(v); made++;
+  }
+}
+// alloc-free sphere-walking update (hoisted temporaries; runs every frame, all states)
+const _vAxis = new THREE.Vector3(), _vTmp = new THREE.Vector3(), _vCand = new THREE.Vector3();
+const _vU = new THREE.Vector3(), _vF = new THREE.Vector3(), _vR = new THREE.Vector3(), _vMtx = new THREE.Matrix4();
+const VILL_FREEZE2 = 32 * 32;
+function reseatVillager(v, doOrient) {
+  const r = surfaceRadius(v.dir);
+  v.g.position.set(v.dir.x * r, v.dir.y * r, v.dir.z * r);
+  if (!doOrient) return;
+  _vU.copy(v.dir);
+  _vF.copy(v.heading).addScaledVector(_vU, -v.heading.dot(_vU));
+  if (_vF.lengthSq() < 1e-6) { _vF.set(0, 1, 0); _vF.addScaledVector(_vU, -_vF.dot(_vU)); }
+  _vF.normalize();
+  _vR.crossVectors(_vU, _vF).normalize();
+  _vF.crossVectors(_vR, _vU).normalize();
+  _vMtx.makeBasis(_vR, _vU, _vF);
+  v.g.quaternion.setFromRotationMatrix(_vMtx);
+}
+function updateVillagers(dt) {
+  for (let i = 0; i < villagers.length; i++) {
+    const v = villagers[i];
+    if (v.pause > 0) v.pause -= dt;
+    const dx = v.g.position.x - travelerPivot.position.x, dy = v.g.position.y - travelerPivot.position.y, dz = v.g.position.z - travelerPivot.position.z;
+    const far = (dx * dx + dy * dy + dz * dz) > VILL_FREEZE2;
+    let moving = false;
+    if (v.pause <= 0) {
+      // keep heading on the tangent plane of the current normal
+      v.heading.addScaledVector(v.dir, -v.heading.dot(v.dir));
+      if (v.heading.lengthSq() < 1e-6) { _vTmp.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5); v.heading.copy(_vTmp).addScaledVector(v.dir, -_vTmp.dot(v.dir)); }
+      v.heading.normalize();
+      // leash: steer back toward home if wandered too far
+      if (v.dir.dot(v.home) < Math.cos(v.leash)) {
+        _vTmp.copy(v.home).addScaledVector(v.dir, -v.home.dot(v.dir));
+        if (_vTmp.lengthSq() > 1e-6) { _vTmp.normalize(); v.heading.lerp(_vTmp, 0.2).normalize(); }
+      }
+      _vAxis.crossVectors(v.dir, v.heading);
+      if (_vAxis.lengthSq() > 1e-7) {
+        _vAxis.normalize();
+        const ang = (v.speed * dt) / PLANET_R;
+        _vCand.copy(v.dir).applyAxisAngle(_vAxis, ang).normalize();
+        if (villagerBlocked(_vCand)) {
+          // blocked by a building: turn and retry next frame (never commit into it)
+          v.heading.applyAxisAngle(v.dir, 1.15).normalize();
+          v.stuck++;
+          if (v.stuck > 6) { v.pause = 0.4 + Math.random() * 0.5; v.stuck = 0; }
+        } else {
+          v.dir.copy(_vCand); v.stuck = 0; moving = true;
+          if (Math.random() < 0.004) v.pause = 0.6 + Math.random() * 1.2; // occasional dwell
+        }
+      }
+    }
+    reseatVillager(v, !far);
+    if (!far) {
+      v.bob += dt * (moving ? 7 + v.speed : 1.4);
+      const swing = Math.sin(v.bob) * (moving ? 0.5 : 0.04);
+      v.legL.rotation.x = swing; v.legR.rotation.x = -swing;
+      v.armL.rotation.x = -swing; v.armR.rotation.x = swing;
+      v.glow.material.opacity = 0.4 + Math.sin(windClock * 5 + v.phase) * 0.12;
+    }
+  }
+}
+
 const traveler = new THREE.Group();
 {
   const cloak = toonMat('#5f88a6', { rim: 0.3 });
@@ -1896,6 +2139,8 @@ function animate() {
   updateMovement(dt);
   updateCamera(dt);
   updateCharacterAnim(dt);
+  updateVillagers(dt);   // townsfolk wander every frame, so the town is alive behind the menu too
+  updateSmoke(dt);
   updateWisp(dt);
   updateLanterns(dt);
   updateOvertimeFlashes(dt);
@@ -2250,6 +2495,21 @@ running = true; loopStarted = true; ensureLoop();
 window.__game = {
   get litCount() { return litCount; },
   lanternCount: () => lanterns.length,
+  villagerCount: () => villagers.length,
+  villagerSample: () => villagers.slice(0, 3).map(v => ({ pos: [Math.round(v.g.position.x), Math.round(v.g.position.y), Math.round(v.g.position.z)] })),
+  focusVillager: (i = -1) => {
+    let v = villagers[i];
+    if (!v) { // pick the villager standing in the most open spot (farthest from any blocker)
+      let best = -9; for (const c of villagers) { let mx = -2; for (const b of villagerBlockers) { const d = c.dir.x*b.x + c.dir.y*b.y + c.dir.z*b.z; if (d > mx) mx = d; } const open = -mx; if (open > best) { best = open; v = c; } }
+    }
+    if (!v) return null;
+    const side = new THREE.Vector3().crossVectors(v.dir, v.heading).normalize();
+    playerDir.copy(v.dir).applyAxisAngle(side, 0.085).normalize();
+    camForward.copy(tangentToward(playerDir, v.dir));
+    orbit.targetDist = 6; orbit.dist = 6; orbit.pitch = 0.5;
+    for (let k = 0; k < 4; k++) { updateMovement(0.016); updateCamera(0.016); }
+    return { pos: [Math.round(v.g.position.x), Math.round(v.g.position.y), Math.round(v.g.position.z)] };
+  },
   lightOne: () => { const L = lanterns.find(x => !x.lit); if (L) lightLantern(L, lanterns.indexOf(L)); return litCount; },
   // deterministic sim stepping for verification (bypasses background rAF throttling)
   step: (codes = ['KeyW'], n = 90, dt = 0.033) => {
