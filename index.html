@@ -70,6 +70,12 @@
     opacity: 0; transition: opacity 0.18s ease, transform 0.7s ease;
   }
   #pop.show { opacity: 1; transform: translate(-50%, -110%); }
+  #combo { color: #ffcf5a; }
+  #timerWrap {
+    position: fixed; top: calc(82px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    width: 150px; height: 6px; border-radius: 4px; background: rgba(20,22,32,0.35); z-index: 10; overflow: hidden; pointer-events: none;
+  }
+  #timerFill { height: 100%; width: 100%; background: #8fd06a; border-radius: 4px; }
 
   #hint {
     bottom: calc(14px + env(safe-area-inset-bottom)); left: calc(14px + env(safe-area-inset-left)); padding: 10px 14px;
@@ -172,12 +178,13 @@
 <div id="grain"></div>
 
 <div id="hud">
-  <div id="counter" class="hud-card">Parcels: <b id="score">0</b> &nbsp;&middot;&nbsp; <span style="opacity:0.72">lanterns <b id="lanternCount">0</b>/<b id="lanternTotal">0</b></span></div>
-  <div id="deliverHint" class="hud-card">Carry the parcel to the glowing beacon &middot; <b id="dist">--</b></div>
+  <div id="counter" class="hud-card">Score <b id="score">0</b><b id="combo"></b><span style="display:none"><b id="lanternCount">0</b><b id="lanternTotal">0</b></span></div>
+  <div id="deliverHint" class="hud-card">Deliver to the glowing beacon &middot; <b id="dist">--</b></div>
+  <div id="timerWrap"><div id="timerFill"></div></div>
   <div id="muteBtn" class="hud-card" title="Toggle sound">~</div>
   <div id="hint" class="hud-card">
     <span>WASD</span> walk &middot; <span>click</span> free-look<br>
-    <span>Wheel</span> zoom &middot; <span>Shift</span> stroll &middot; <span>Space</span> hop<br>
+    <span>Wheel</span> zoom &middot; <span>Shift</span> sprint &middot; <span>Space</span> hop<br>
     <span>F</span> full screen
   </div>
 </div>
@@ -193,7 +200,7 @@
     <div class="sub">Deliver the post around a tiny round world</div>
     <div class="controls">
       <span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> walk &nbsp;&middot;&nbsp; click for free-look<br>
-      <span class="k">Shift</span> stroll &nbsp;&middot;&nbsp; <span class="k">Space</span> hop &nbsp;&middot;&nbsp; wheel zoom &nbsp;&middot;&nbsp; <span class="k">F</span> full screen<br>
+      <span class="k">Shift</span> sprint &nbsp;&middot;&nbsp; <span class="k">Space</span> hop &nbsp;&middot;&nbsp; wheel zoom &nbsp;&middot;&nbsp; <span class="k">F</span> full screen<br>
       Carry each parcel to the glowing beacon to deliver it.
     </div>
     <button id="beginBtn">BEGIN</button>
@@ -1300,18 +1307,29 @@ const beacon = new THREE.Group();
   beacon.userData = { pillar, arrow, ring };
   scene.add(beacon);
 }
-let deliveries = 0;
+let deliveries = 0, score = 0, combo = 0;
+let deliverTimeLeft = 0, deliverTimeLimit = 1;
 let currentTarget = null;
 const scoreEl = document.getElementById('score');
+const comboEl = document.getElementById('combo');
 const distEl = document.getElementById('dist');
 const popEl = document.getElementById('pop');
+const timerFill = document.getElementById('timerFill');
 const DELIVER_RADIUS = 4.2;
+function updateScoreHud() {
+  if (scoreEl) scoreEl.textContent = score;
+  if (comboEl) comboEl.textContent = combo > 1 ? '  x' + combo : '';
+}
 function pickNewTarget() {
   if (mailboxes.length === 0) return;
   let next = currentTarget;
   for (let t = 0; t < 24 && next === currentTarget; t++) next = mailboxes[Math.floor(Math.random() * mailboxes.length)];
   currentTarget = next;
   placeOnPlanet(beacon, currentTarget.dir, {});
+  const dx = currentTarget.pos.x - travelerPivot.position.x, dy = currentTarget.pos.y - travelerPivot.position.y, dz = currentTarget.pos.z - travelerPivot.position.z;
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  deliverTimeLimit = THREE.MathUtils.clamp(dist * 0.5 + 7, 10, 40); // farther drops get more time
+  deliverTimeLeft = deliverTimeLimit;
 }
 function updateDelivery(dt) {
   if (!currentTarget) return;
@@ -1319,20 +1337,57 @@ function updateDelivery(dt) {
   beacon.userData.arrow.rotation.y += dt * 1.6;
   beacon.userData.pillar.material.opacity = 0.42 + Math.sin(windClock * 2.5) * 0.12;
   const rs = 1 + Math.sin(windClock * 2.5) * 0.12; beacon.userData.ring.scale.set(rs, rs, rs);
+  // per-parcel timer: running out only breaks the combo, never fails (stays cozy)
+  if (deliverTimeLeft > 0) { deliverTimeLeft = Math.max(0, deliverTimeLeft - dt); if (deliverTimeLeft === 0 && combo > 0) { combo = 0; updateScoreHud(); } }
+  if (timerFill) { const f = deliverTimeLimit > 0 ? deliverTimeLeft / deliverTimeLimit : 0; timerFill.style.width = (f * 100) + '%'; timerFill.style.background = f > 0.5 ? '#8fd06a' : (f > 0.2 ? '#e6c24a' : '#e0664a'); }
   const dx = currentTarget.pos.x - travelerPivot.position.x, dy = currentTarget.pos.y - travelerPivot.position.y, dz = currentTarget.pos.z - travelerPivot.position.z;
   const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (distEl) distEl.textContent = Math.round(d) + 'm';
   if (d < DELIVER_RADIUS) {
     deliveries++;
-    if (scoreEl) { scoreEl.textContent = deliveries; scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
+    const inTime = deliverTimeLeft > 0;
+    combo = inTime ? Math.min(combo + 1, 9) : 0;
+    const pts = Math.round((100 + Math.round(deliverTimeLeft) * 5) * (1 + Math.max(0, combo - 1) * 0.5));
+    score += pts; updateScoreHud();
+    if (scoreEl) { scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
     spawnPuff(currentTarget.pos, currentTarget.dir);
-    lanternChime(Math.min(Math.max(0, deliveries - 1), 7));
+    lanternChime(Math.min(combo, 7));
     wispState.celebrate = 1.5; player.idleTime = 0;
-    if (popEl) { popEl.textContent = '+1 Delivered!'; popEl.classList.remove('show'); requestAnimationFrame(() => popEl.classList.add('show')); setTimeout(() => popEl.classList.remove('show'), 1100); }
+    if (popEl) { popEl.textContent = '+' + pts + (combo > 1 ? '   combo x' + combo : ''); popEl.classList.remove('show'); requestAnimationFrame(() => popEl.classList.add('show')); setTimeout(() => popEl.classList.remove('show'), 1100); }
     pickNewTarget();
   }
 }
 pickNewTarget();
+// ---- Collectible gems (extra score, reward exploring the bigger world) ----
+const coins = [];
+const _coinGeo = new THREE.OctahedronGeometry(0.5, 0);
+const _coinMat = toonMat('#ffd24a', { emissive: '#ffb020', emissiveIntensity: 0.5, rim: 0.3 });
+function relocateCoin(c) {
+  let dir = randDir();
+  if (dir.dot(townDir) > Math.cos(0.16)) dir = dirNear(townDir, 0.5 + Math.random());
+  c.dir.copy(dir).normalize();
+  c.pos.copy(c.dir).multiplyScalar(surfaceRadius(c.dir) + 1.5);
+  c.mesh.position.copy(c.pos);
+}
+for (let i = 0; i < 26; i++) {
+  const mesh = new THREE.Mesh(_coinGeo, _coinMat); mesh.castShadow = true;
+  const c = { mesh, dir: new THREE.Vector3(), pos: new THREE.Vector3(), phase: Math.random() * 6.28 };
+  relocateCoin(c); scene.add(mesh); coins.push(c);
+}
+function updateCoins(dt) {
+  for (const c of coins) {
+    c.mesh.rotation.y += dt * 2.2;
+    c.mesh.position.copy(c.pos).addScaledVector(c.dir, Math.sin(windClock * 2 + c.phase) * 0.2);
+    const dx = c.pos.x - travelerPivot.position.x, dy = c.pos.y - travelerPivot.position.y, dz = c.pos.z - travelerPivot.position.z;
+    if (dx * dx + dy * dy + dz * dz < 6.76) {
+      score += 15; updateScoreHud();
+      if (scoreEl) { scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
+      spawnPuff(c.pos, c.dir);
+      if (audio.ctx && !audio.muted) lanternChime(6);
+      relocateCoin(c);
+    }
+  }
+}
 const TRAIL_N = 12; const wispTrail = [];
 for (let i = 0; i < TRAIL_N; i++) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT_TEX, color: 0x9fd8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
@@ -1483,52 +1538,55 @@ window.addEventListener('pointerup', (e) => { if (e.pointerId === dragPointerId)
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); orbit.targetDist = THREE.MathUtils.clamp(orbit.targetDist + e.deltaY * 0.016, 8, 120); }, { passive: false });
 
 const joyEl = document.getElementById('joystick'), joyKnob = document.getElementById('joyKnob');
-const touchMove = { active: false, id: null, dx: 0, dy: 0, cx: 0, cy: 0 };
-const touchLook = { active: false, id: null, lastX: 0, lastY: 0 };
-const pinch = { active: false, startDist: 0, startTarget: 0 };
+// Role-based multi-touch: a finger that STARTS on the left half drives the joystick (move);
+// any other finger looks. Move + look run at the same time. Pinch-zoom only kicks in when
+// there are TWO look fingers (so left-move + right-look never gets hijacked into a pinch).
+const touchMove = { active: false, dx: 0, dy: 0, cx: 0, cy: 0 };
+let moveTouchId = null;
+const lookIds = [];
+let lookLastX = 0, lookLastY = 0;
+let pinchActive = false, pinchStartDist = 0, pinchStartTarget = 0;
 const _touchDist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+const _byId = (list, id) => { for (const t of list) if (t.identifier === id) return t; return null; };
+function _endTouch(t) {
+  if (t.identifier === moveTouchId) { moveTouchId = null; touchMove.active = false; touchMove.dx = 0; touchMove.dy = 0; joyEl.classList.remove('active'); }
+  const li = lookIds.indexOf(t.identifier);
+  if (li !== -1) { lookIds.splice(li, 1); pinchActive = false; }
+}
 window.addEventListener('touchstart', (e) => {
-  if (e.touches.length >= 2) { // two fingers => pinch-zoom; cancel any move/look
-    pinch.active = true; pinch.startDist = _touchDist(e.touches[0], e.touches[1]); pinch.startTarget = orbit.targetDist;
-    touchMove.active = false; touchMove.dx = 0; touchMove.dy = 0; joyEl.classList.remove('active'); touchLook.active = false;
-    return;
-  }
   for (const t of e.changedTouches) {
-    if (t.clientX < window.innerWidth * 0.5 && !touchMove.active) {
-      touchMove.active = true; touchMove.id = t.identifier; touchMove.cx = t.clientX; touchMove.cy = t.clientY; touchMove.dx = 0; touchMove.dy = 0;
+    if (t.clientX < window.innerWidth * 0.5 && moveTouchId === null) {       // left -> joystick
+      moveTouchId = t.identifier;
+      touchMove.active = true; touchMove.cx = t.clientX; touchMove.cy = t.clientY; touchMove.dx = 0; touchMove.dy = 0;
       const jh = (joyEl.offsetWidth || 150) / 2;
       joyEl.style.left = (t.clientX - jh) + 'px'; joyEl.style.top = (t.clientY - jh) + 'px'; joyEl.classList.add('active');
       joyKnob.style.left = '50%'; joyKnob.style.top = '50%';
-    } else if (!touchLook.active) {
-      touchLook.active = true; touchLook.id = t.identifier; touchLook.lastX = t.clientX; touchLook.lastY = t.clientY;
+    } else if (lookIds.length < 2) {                                          // other -> look / pinch
+      lookIds.push(t.identifier);
+      if (lookIds.length === 1) { lookLastX = t.clientX; lookLastY = t.clientY; }
+      else { const a = _byId(e.touches, lookIds[0]), b = _byId(e.touches, lookIds[1]); if (a && b) { pinchActive = true; pinchStartDist = _touchDist(a, b); pinchStartTarget = orbit.targetDist; } }
     }
   }
 }, { passive: true });
 window.addEventListener('touchmove', (e) => {
-  if (pinch.active && e.touches.length >= 2) {
-    const d = _touchDist(e.touches[0], e.touches[1]);
-    if (d > 0) orbit.targetDist = THREE.MathUtils.clamp(pinch.startTarget * (pinch.startDist / d), 8, 120);
-    return;
+  if (pinchActive && lookIds.length === 2) {
+    const a = _byId(e.touches, lookIds[0]), b = _byId(e.touches, lookIds[1]);
+    if (a && b) { const d = _touchDist(a, b); if (d > 0) orbit.targetDist = THREE.MathUtils.clamp(pinchStartTarget * (pinchStartDist / d), 8, 120); }
   }
   for (const t of e.changedTouches) {
-    if (touchMove.active && t.identifier === touchMove.id) {
+    if (t.identifier === moveTouchId) {
       let dx = t.clientX - touchMove.cx, dy = t.clientY - touchMove.cy; const mag = Math.hypot(dx, dy), max = 52;
       if (mag > max) { dx = dx / mag * max; dy = dy / mag * max; }
       touchMove.dx = dx / max; touchMove.dy = dy / max;
       joyKnob.style.left = (50 + (dx / max) * 38) + '%'; joyKnob.style.top = (50 + (dy / max) * 38) + '%';
-    } else if (touchLook.active && t.identifier === touchLook.id) {
-      const dx = t.clientX - touchLook.lastX, dy = t.clientY - touchLook.lastY; touchLook.lastX = t.clientX; touchLook.lastY = t.clientY;
+    } else if (!pinchActive && lookIds.length === 1 && t.identifier === lookIds[0]) {
+      const dx = t.clientX - lookLastX, dy = t.clientY - lookLastY; lookLastX = t.clientX; lookLastY = t.clientY;
       rotateCamYaw(-dx * 0.006); orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.005, 0.12, 1.4);
     }
   }
 }, { passive: true });
-window.addEventListener('touchend', (e) => {
-  if (pinch.active && e.touches.length < 2) pinch.active = false;
-  for (const t of e.changedTouches) {
-    if (touchMove.active && t.identifier === touchMove.id) { touchMove.active = false; touchMove.dx = 0; touchMove.dy = 0; joyEl.classList.remove('active'); }
-    if (touchLook.active && t.identifier === touchLook.id) { touchLook.active = false; }
-  }
-}, { passive: true });
+window.addEventListener('touchend', (e) => { for (const t of e.changedTouches) { _endTouch(t); } if (lookIds.length === 1) { const rt = _byId(e.touches, lookIds[0]); if (rt) { lookLastX = rt.clientX; lookLastY = rt.clientY; } } }, { passive: true });
+window.addEventListener('touchcancel', (e) => { for (const t of e.changedTouches) { _endTouch(t); } }, { passive: true });
 // On touch devices, swap the control hints for the on-screen controls
 if (isMobile) {
   document.getElementById('hint').innerHTML = '<span>Left</span> half to walk<br><span>Right</span> half to look<br><span>Pinch</span> to zoom out to the planet';
@@ -1563,6 +1621,7 @@ function animate() {
   updateWisp(dt);
   updateLanterns(dt);
   updateDelivery(dt);
+  updateCoins(dt);
   updateParticles(dt, wind);
   updateClouds(dt);
   updatePuffs(dt, _up.copy(playerDir));
@@ -1614,8 +1673,8 @@ function updateMovement(dt) {
 
   const inputMag = Math.hypot(f, r);
   const hasInput = inputMag > 0.06;
-  const stroll = keys['ShiftLeft'] || keys['ShiftRight'];
-  const maxSpeed = stroll ? 4.0 : 8.0;
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  const maxSpeed = sprint ? 13.0 : 8.5;
 
   if (hasInput) {
     _moveT.set(0, 0, 0).addScaledVector(_camFwdT, f).addScaledVector(_camRightT, r);
@@ -1864,6 +1923,9 @@ window.__game = {
     return { deliveries };
   },
   get deliveries() { return deliveries; },
+  get score() { return score; },
+  get combo() { return combo; },
+  touchState: () => ({ moveActive: touchMove.active, dx: Math.round(touchMove.dx * 100) / 100, dy: Math.round(touchMove.dy * 100) / 100, lookN: lookIds.length, pinch: pinchActive, yaw: Math.round((camForward.x + camForward.z) * 1000) / 1000 }),
   musicState: () => ({ paused: music.paused, t: Math.round(music.currentTime * 10) / 10, dur: Math.round(music.duration || 0), ready: music.readyState, muted: music.muted }),
 };
 </script>
