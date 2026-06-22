@@ -49,20 +49,23 @@
     border-radius: 14px;
     box-shadow: 0 6px 22px rgba(0,0,0,0.18);
   }
-  #counter {
-    top: calc(54px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-    padding: 8px 18px; font-size: 15px; letter-spacing: 0.4px; white-space: nowrap; max-width: 94vw;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  /* Single horizontal HUD rail across the top - never overlaps the play area */
+  #topbar {
+    top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 16px 11px; max-width: calc(100vw - 24px);
+    border-radius: 16px; white-space: nowrap; overflow: hidden;
+    opacity: 0; transition: opacity 0.5s ease; /* only shown while a shift is live */
   }
-  #shiftClock {
-    top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-    padding: 5px 20px; font-size: 26px; font-weight: 700; letter-spacing: 1px; color: #fff;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  #topbar #shiftClock {
+    font-size: 22px; font-weight: 700; letter-spacing: 1px; color: #fff;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.5); min-width: 58px; text-align: center;
   }
-  #modBadge {
-    top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
-    padding: 7px 12px; font-size: 12px; color: #cfe0ff;
-  }
+  #topbar #modBadge { font-size: 11px; letter-spacing: 0.5px; color: #cfe0ff; }
+  #topbar #counter { font-size: 15px; letter-spacing: 0.4px; text-shadow: 0 1px 2px rgba(0,0,0,0.35); }
+  #topbar #deliverHint { font-size: 12.5px; opacity: 0.92; }
+  #topbar #deliverHint b { color: var(--warm); }
+  .bar-sep { width: 1px; height: 22px; background: rgba(255,240,214,0.18); flex: 0 0 auto; }
   #parcelBadge { color: #ffcf5a; }
   #nav {
     position: fixed; z-index: 11; width: 0; height: 0; pointer-events: none; opacity: 0; transition: opacity 0.2s;
@@ -75,29 +78,11 @@
     opacity: 0; transition: opacity 0.2s ease;
   }
   #toast.show { opacity: 1; }
-  #results {
-    position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
-    background: rgba(8,10,22,0.5); transition: opacity 0.5s ease;
-  }
-  #results.hidden { opacity: 0; pointer-events: none; }
-  #results h1 { font-size: 54px; color: #ffe9c8; margin: 2px 0 4px; }
-  #resNew { color: #ffcf5a; letter-spacing: 3px; font-weight: 700; margin: 0 0 14px; }
-  #againBtn {
-    pointer-events: auto; cursor: pointer; margin-top: 16px; padding: 14px 44px; font-size: 16px; letter-spacing: 1.5px;
-    color: #2a1c12; font-weight: 600; background: linear-gradient(180deg, #ffdca0, #f5b86e);
-    border: none; border-radius: 40px; box-shadow: 0 8px 26px rgba(245,175,95,0.45);
-    transition: transform 0.15s ease;
-  }
-  #againBtn:hover { transform: translateY(-2px); }
   #counter b { color: var(--warm); font-weight: 600; display: inline-block; }
   #counter b.pop { animation: pop 0.4s ease; }
   @keyframes pop { 0%{transform:scale(1);} 40%{transform:scale(1.6); color:#ffcf7a;} 100%{transform:scale(1);} }
 
-  #deliverHint {
-    top: calc(90px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-    padding: 6px 14px; font-size: 12.5px; white-space: nowrap; opacity: 0.92;
-  }
-  #deliverHint b { color: var(--warm); }
+  /* #deliverHint styling now lives inside #topbar */
   #pop {
     position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%); z-index: 13;
     pointer-events: none; font-size: 30px; font-weight: 700; letter-spacing: 0.5px;
@@ -106,17 +91,20 @@
   }
   #pop.show { opacity: 1; transform: translate(-50%, -110%); }
   #combo { color: #ffcf5a; }
+  /* combo timer: a 2px hairline pinned to the rail's bottom edge */
   #timerWrap {
-    position: fixed; top: calc(116px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-    width: 150px; height: 6px; border-radius: 4px; background: rgba(20,22,32,0.35); z-index: 10; overflow: hidden; pointer-events: none;
+    position: absolute; left: 8px; right: 8px; bottom: 3px;
+    height: 2px; border-radius: 2px; background: rgba(20,22,32,0.30);
+    overflow: hidden; pointer-events: none; width: auto;
   }
-  #timerFill { height: 100%; width: 100%; background: #8fd06a; border-radius: 4px; }
+  #timerFill { height: 100%; width: 100%; background: #ffcf5a; border-radius: 2px; }
 
-  #hint {
-    bottom: calc(14px + env(safe-area-inset-bottom)); left: calc(14px + env(safe-area-inset-left)); padding: 10px 14px;
-    font-size: 12px; line-height: 1.55; color: #f0e4d2; opacity: 0.85; max-width: 240px;
+  /* combo ember vignette - pure DOM, no WebGL cost, intensifies with combo */
+  #comboGlow {
+    position: fixed; inset: 0; pointer-events: none; z-index: 7; opacity: 0;
+    background: radial-gradient(125% 95% at 50% 112%, rgba(255,150,60,0.55), transparent 62%);
+    mix-blend-mode: screen; transition: opacity 0.45s ease;
   }
-  #hint span { color: var(--warm); }
 
   #muteBtn {
     top: calc(14px + env(safe-area-inset-top)); right: calc(14px + env(safe-area-inset-right)); width: 44px; height: 44px;
@@ -139,13 +127,14 @@
   #intro {
     position: fixed; inset: 0; z-index: 30;
     display: flex; align-items: center; justify-content: center;
-    background:
-      radial-gradient(130% 100% at 50% 18%, rgba(120, 150, 190, 0.35), rgba(40, 44, 70, 0.85)),
-      linear-gradient(180deg, #46527a 0%, #20243c 100%);
+    /* translucent night scrim so the live, slowly-orbiting planet reads through */
+    background: radial-gradient(120% 90% at 50% 30%, rgba(40,46,78,0.30), rgba(16,18,32,0.72));
+    backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
     transition: opacity 1.1s ease;
   }
   #intro.hidden { opacity: 0; pointer-events: none; }
   .intro-card {
+    position: relative; overflow: hidden;
     text-align: center; max-width: 470px; padding: 40px 38px;
     background: rgba(34, 30, 46, 0.5);
     border: 1px solid rgba(255, 236, 205, 0.18);
@@ -177,6 +166,15 @@
   #beginBtn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(245, 175, 95, 0.6); }
   #beginBtn:active { transform: translateY(0); }
   .loadnote { margin-top: 18px; font-size: 11px; color: #bcae98; opacity: 0.65; letter-spacing: 0.5px; }
+  .intro-stats { display: flex; gap: 30px; justify-content: center; margin: 6px 0 26px; }
+  .intro-stats .stat-n { font-size: 32px; font-weight: 700; color: #ffe9c8; line-height: 1; text-shadow: 0 2px 14px rgba(255,180,110,0.35); }
+  .intro-stats .stat-l { font-size: 10px; letter-spacing: 2px; color: #cdbfa9; margin-top: 6px; }
+  .intro-flash {
+    position: absolute; top: 0; left: -60%; width: 50%; height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255,236,205,0.10), transparent);
+    pointer-events: none; animation: introSheen 5.5s ease-in-out infinite;
+  }
+  @keyframes introSheen { 0%,58%{ left:-60%; } 84%,100%{ left:120%; } }
 
   #joystick {
     position: fixed; z-index: 14; width: 120px; height: 120px;
@@ -197,13 +195,19 @@
 
   /* Touch / phone tuning */
   @media (pointer: coarse) {
-    #counter { font-size: 16px; padding: 10px 18px; }
-    #hint { font-size: 13px; max-width: 56vw; }
+    #topbar { gap: 8px; padding: 7px 12px 10px; }
+    #topbar #shiftClock { font-size: 19px; min-width: 50px; }
+    #topbar #counter { font-size: 14px; }
+    #topbar #deliverHint { font-size: 11.5px; }
     #muteBtn { width: 52px; height: 52px; font-size: 20px; }
     #joystick { width: 150px; height: 150px; }
     .joy-knob { width: 62px; height: 62px; margin: -31px 0 0 -31px; }
     .intro-card { max-width: 88vw; padding: 30px 24px; }
     #beginBtn { padding: 16px 46px; font-size: 17px; }
+  }
+  /* narrowest phones: drop the deliver label, the nav arrow + beacon carry it */
+  @media (pointer: coarse) and (max-width: 430px) {
+    #topbar #deliverHint, #topbar .sep-deliver { display: none; }
   }
 </style>
 </head>
@@ -212,51 +216,47 @@
 <div id="vignette"></div>
 <div id="grain"></div>
 
+<div id="comboGlow"></div>
+
 <div id="hud">
-  <div id="shiftClock" class="hud-card">0:55</div>
-  <div id="modBadge" class="hud-card">Clear Night</div>
-  <div id="counter" class="hud-card">Score <b id="score">0</b><b id="combo"></b><span style="display:none"><b id="lanternCount">0</b><b id="lanternTotal">0</b></span></div>
-  <div id="deliverHint" class="hud-card">Deliver &middot; <b id="dist">--</b> <b id="parcelBadge"></b></div>
-  <div id="timerWrap"><div id="timerFill"></div></div>
+  <div id="topbar" class="hud-card">
+    <div id="shiftClock">0:55</div>
+    <div class="bar-sep"></div>
+    <div id="modBadge">Clear Night</div>
+    <div class="bar-sep"></div>
+    <div id="counter">Score <b id="score">0</b><b id="combo"></b><span style="display:none"><b id="lanternCount">0</b><b id="lanternTotal">0</b></span></div>
+    <div class="bar-sep sep-deliver"></div>
+    <div id="deliverHint">Deliver &middot; <b id="dist">--</b> <b id="parcelBadge"></b></div>
+    <div id="timerWrap"><div id="timerFill"></div></div>
+  </div>
+  <div id="muteBtn" class="hud-card" title="Toggle sound">~</div>
   <div id="nav"></div>
   <div id="toast"></div>
-  <div id="muteBtn" class="hud-card" title="Toggle sound">~</div>
-  <div id="hint" class="hud-card">
-    <span>WASD</span> walk &middot; <span>click</span> free-look<br>
-    <span>Wheel</span> zoom &middot; <span>Shift</span> sprint &middot; <span>Space</span> hop<br>
-    <span>F</span> full screen
-  </div>
 </div>
 
 <div id="finale"></div>
 <div id="pop"></div>
 
-<div id="results" class="hidden">
-  <div class="intro-card">
-    <div class="sub">SHIFT COMPLETE</div>
-    <h1 id="resScore">0</h1>
-    <div id="resNew">NEW BEST!</div>
-    <div class="controls">
-      Parcels delivered <b id="resDeliveries">0</b><br>
-      Best combo <b id="resCombo">x1</b> &nbsp;&middot;&nbsp; Best score <b id="resBest">0</b>
-    </div>
-    <button id="againBtn">PLAY AGAIN</button>
-  </div>
-</div>
-
 <div id="joystick"><div class="joy-base"></div><div class="joy-knob" id="joyKnob"></div></div>
 
 <div id="intro">
   <div class="intro-card">
+    <div id="introFlash" class="intro-flash"></div>
     <h1>NIGHT SHIFT</h1>
     <div class="sub">Run the midnight post under a sky full of stars</div>
-    <div class="controls">
-      <span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> walk &nbsp;&middot;&nbsp; click for free-look<br>
-      <span class="k">Shift</span> sprint &nbsp;&middot;&nbsp; <span class="k">Space</span> hop &nbsp;&middot;&nbsp; wheel zoom &nbsp;&middot;&nbsp; <span class="k">F</span> full screen<br>
-      Reach each glowing beacon before the clock runs out. Fast drops build your combo &mdash; every delivery buys back time. Grab gems to keep the chain alive.
+
+    <div class="intro-stats">
+      <div class="stat"><div class="stat-n" id="introBest">0</div><div class="stat-l">BEST SHIFT</div></div>
+      <div class="stat" id="introLastWrap" style="display:none"><div class="stat-n" id="introLast">0</div><div class="stat-l">LAST RUN</div></div>
     </div>
+
     <button id="beginBtn">START SHIFT</button>
-    <div class="loadnote">Best shift <b id="introBest">0</b> &nbsp;&middot;&nbsp; each run reshuffles the city and the night.</div>
+
+    <div class="controls">
+      <span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> walk &nbsp;&middot;&nbsp;
+      <span class="k">Shift</span> sprint &nbsp;&middot;&nbsp; <span class="k">Space</span> hop &nbsp;&middot;&nbsp; wheel zoom &nbsp;&middot;&nbsp; <span class="k">F</span> full screen<br>
+      Reach each glowing <b>beacon</b> before the clock runs out. Fast drops build your <b>combo</b>; every drop buys back time. Detour to light a <b>paper lantern</b> for bonus seconds, and grab gems to keep the chain alive.
+    </div>
   </div>
 </div>
 
@@ -983,12 +983,18 @@ function makePaperLantern(dir) {
   const capBot = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.18, 0.16, 10), toonMat('#3c2c20')); capBot.position.set(0.45, 2.06, 0); g.add(capBot);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xffb060, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
   glow.scale.set(4.5, 4.5, 1); glow.position.set(0.45, 2.7, 0); g.add(glow);
+  // warm pool of light cast on the ground beneath a lit lantern (desktop only)
+  let pool = null;
+  if (!isMobile) {
+    pool = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xff9a44, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
+    pool.scale.set(8, 8, 1); pool.position.set(0.45, 0.12, 0); g.add(pool);
+  }
 
   placeOnPlanet(g, dir, { faceDir: tangentToward(dir, townDir) });
   scene.add(g);
   const d = dir.clone().normalize();
   const worldPos = d.clone().multiplyScalar(surfaceRadius(d) + 2.7);
-  const lantern = { group: g, body, bodyMat, glow, worldPos, dir: d, lit: false, litT: 0, pulse: rnd() * Math.PI * 2 };
+  const lantern = { group: g, body, bodyMat, glow, pool, worldPos, dir: d, lit: false, litT: 0, pulse: rnd() * Math.PI * 2 };
   lanterns.push(lantern);
   return lantern;
 }
@@ -1446,6 +1452,8 @@ const scoreEl = document.getElementById('score'), comboEl = document.getElementB
 const distEl = document.getElementById('dist'), popEl = document.getElementById('pop');
 const timerFill = document.getElementById('timerFill'), clockEl = document.getElementById('shiftClock');
 const navEl = document.getElementById('nav'), modBadge = document.getElementById('modBadge'), parcelBadge = document.getElementById('parcelBadge');
+const comboGlowEl = document.getElementById('comboGlow');
+const topbarEl = document.getElementById('topbar');
 
 const MODS = [
   { name: 'Clear Night', desc: 'a calm shift' },
@@ -1472,7 +1480,11 @@ function dirNearM(center, maxAng) {
   return up.clone().multiplyScalar(Math.cos(ang)).addScaledVector(off, Math.sin(ang)).normalize();
 }
 function fmtClock(t) { t = Math.max(0, t); const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ':' + (s < 10 ? '0' : '') + s; }
-function updateScoreHud() { if (scoreEl) scoreEl.textContent = score; if (comboEl) comboEl.textContent = combo > 1 ? '  x' + combo : ''; }
+function updateScoreHud() {
+  if (scoreEl) scoreEl.textContent = score;
+  if (comboEl) comboEl.textContent = combo > 1 ? '  x' + combo : '';
+  if (comboGlowEl) comboGlowEl.style.opacity = combo > 1 ? Math.min(0.5, (combo - 1) * 0.075) : 0;
+}
 let _toastH = 0;
 function toast(msg) { const t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.add('show'); clearTimeout(_toastH); _toastH = setTimeout(() => t.classList.remove('show'), 1300); }
 
@@ -1580,21 +1592,44 @@ function startRun() {
     let dir = randDirM(); if (dir.dot(townDir) > Math.cos(0.16)) dir = dirNearM(townDir, 0.5 + Math.random());
     c.dir.copy(dir).normalize(); c.pos.copy(c.dir).multiplyScalar(surfaceRadius(c.dir) + 1.5); c.mesh.position.copy(c.pos);
   }
+  // reset every lantern dark so the same ~12 recycle each shift (and the menu world reads mysterious)
+  litCount = 0; litThisRun = 0; finaleShown = false;
+  for (const L of lanterns) {
+    L.lit = false; L.litT = 0; L.pulse = Math.random() * Math.PI * 2;
+    L.bodyMat.emissive.copy(dimEmissive); L.bodyMat.emissiveIntensity = 0.14;
+    L.glow.material.opacity = 0; if (L.pool) L.pool.material.opacity = 0;
+  }
+  { const lc = document.getElementById('lanternCount'); if (lc) lc.textContent = '0'; }
+  applyRunVisuals();
   firstTarget();
   gameState = 'playing';
-  const r = document.getElementById('results'); if (r) { r.classList.add('hidden'); r.style.display = 'none'; }
+  if (comboGlowEl) comboGlowEl.style.opacity = 0;
+  if (topbarEl) topbarEl.style.opacity = 1;
   const intro = document.getElementById('intro'); if (intro) { intro.classList.add('hidden'); setTimeout(() => { intro.style.display = 'none'; }, 600); }
-  running = true; clock.getDelta(); if (!loopStarted) { loopStarted = true; animate(); }
+  running = true; loopStarted = true; ensureLoop();
 }
 function endRun() {
+  if (gameState !== 'playing') return; // single-shot: ignore re-entry during the results beat
   gameState = 'results';
   const isBest = score > bestScore;
   if (isBest) { bestScore = score; try { localStorage.setItem(BEST_KEY, String(bestScore)); } catch (e) {} }
   if (clockEl) clockEl.textContent = '0:00';
-  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-  set('resScore', score); set('resDeliveries', deliveries); set('resCombo', 'x' + bestCombo); set('resBest', bestScore);
-  const nb = document.getElementById('resNew'); if (nb) nb.style.display = isBest ? 'block' : 'none';
-  const r = document.getElementById('results'); if (r) { r.style.display = 'flex'; r.classList.remove('hidden'); }
+  if (comboGlowEl) comboGlowEl.style.opacity = 0;
+  if (topbarEl) topbarEl.style.opacity = 0;
+  if (navEl) navEl.style.opacity = 0;
+  const lastScore = score;
+  // a brief "shift complete" beat over the beauty-orbit, then fall back to the title menu
+  toast(isBest ? 'NEW BEST  ' + score : 'SHIFT COMPLETE  ' + score);
+  if (audio.ctx && !audio.muted) [0, 4, 7].forEach((s, i) => setTimeout(() => lanternChime(i + 2), i * 170));
+  setTimeout(() => {
+    gameState = 'menu';
+    started = false; // re-arm START SHIFT so the same button reopens a fresh run
+    const ib = document.getElementById('introBest'); if (ib) ib.textContent = bestScore;
+    const il = document.getElementById('introLast'); if (il) il.textContent = lastScore;
+    const ilw = document.getElementById('introLastWrap'); if (ilw) ilw.style.display = '';
+    const intro = document.getElementById('intro');
+    if (intro) { intro.style.display = 'flex'; void intro.offsetWidth; intro.classList.remove('hidden'); }
+  }, 2600);
 }
 // ---- Collectible gems (extra score, reward exploring the bigger world) ----
 const coins = [];
@@ -1827,20 +1862,22 @@ window.addEventListener('touchmove', (e) => {
 }, { passive: true });
 window.addEventListener('touchend', (e) => { for (const t of e.changedTouches) { _endTouch(t); } if (lookIds.length === 1) { const rt = _byId(e.touches, lookIds[0]); if (rt) { lookLastX = rt.clientX; lookLastY = rt.clientY; } } }, { passive: true });
 window.addEventListener('touchcancel', (e) => { for (const t of e.changedTouches) { _endTouch(t); } }, { passive: true });
-// On touch devices, swap the control hints for the on-screen controls
+// On touch devices, swap the menu controls copy for the on-screen touch controls
 if (isMobile) {
-  document.getElementById('hint').innerHTML = '<span>Left</span> half to walk<br><span>Right</span> half to look<br><span>Pinch</span> to zoom out to the planet';
   const ic = document.querySelector('#intro .controls');
-  if (ic) ic.innerHTML = 'Drag the <span class="k">left</span> half to walk,<br>the <span class="k">right</span> half to look, <span class="k">pinch</span> to zoom.<br>Take each parcel to the glowing beacon.';
+  if (ic) ic.innerHTML = 'Drag the <span class="k">left</span> half to walk,<br>the <span class="k">right</span> half to look, <span class="k">pinch</span> to zoom out.<br>Reach each glowing <b>beacon</b> before the clock runs out. Light <b>lanterns</b> for bonus time; grab gems to keep your combo alive.';
 }
 
 // ----------------------------------------------------------------------------
 // Player + loop state
 // ----------------------------------------------------------------------------
 const player = { speed: 0, bob: 0, hop: 0, hopVel: 0, grounded: true, idleTime: 0 };
-let litCount = 0, finaleShown = false;
+let litCount = 0, finaleShown = false, litThisRun = 0, petalSpeedMul = 1;
 const clock = new THREE.Clock();
-let running = false, windClock = 0;
+let running = false, looping = false, windClock = 0;
+// the rAF chain dies whenever animate() early-returns on !running (blur/hide). ensureLoop
+// safely (re)starts it without ever stacking two chains. Restart paths must go through this.
+function ensureLoop() { if (!looping && running) { clock.getDelta(); animate(); } }
 
 // reusable temporaries
 const _camFwd = new THREE.Vector3(), _camFwdT = new THREE.Vector3(), _camRightT = new THREE.Vector3();
@@ -1849,7 +1886,8 @@ const _playerPos = new THREE.Vector3(), _target = new THREE.Vector3(), _desired 
 const _right = new THREE.Vector3(), _fwd = new THREE.Vector3(), _basis = new THREE.Matrix4();
 
 function animate() {
-  if (!running) return;
+  if (!running) { looping = false; return; }
+  looping = true;
   requestAnimationFrame(animate);
   let dt = clock.getDelta(); dt = Math.min(dt, 0.05); if (!isFinite(dt) || dt <= 0) dt = 0.016;
   windClock += dt;
@@ -1860,14 +1898,15 @@ function animate() {
   updateCharacterAnim(dt);
   updateWisp(dt);
   updateLanterns(dt);
+  updateOvertimeFlashes(dt);
   if (gameState === 'playing') {
     shiftClock -= dt * (runMod.drain || 1);
     if (clockEl) { clockEl.textContent = fmtClock(shiftClock); clockEl.style.color = shiftClock < 8 ? '#ff6a5a' : (shiftClock < 15 ? '#ffcf5a' : '#fff'); }
     updateDelivery(dt);
     updateCoins(dt);
     if (shiftClock <= 0) endRun();
-  } else if (gameState === 'results') {
-    rotateCamYaw(dt * 0.1); // slow beauty-shot orbit over the night planet
+  } else if (gameState === 'results' || gameState === 'menu') {
+    rotateCamYaw(dt * 0.1); // slow beauty-shot orbit over the night planet (results + title menu)
   }
   updateParticles(dt, wind);
   updateClouds(dt);
@@ -2031,13 +2070,14 @@ function updateLanterns(dt) {
   for (let i = 0; i < lanterns.length; i++) {
     const L = lanterns[i];
     if (!L.lit) {
-      if (L.worldPos.distanceToSquared(travelerPivot.position) < LANTERN_LIGHT_RADIUS * LANTERN_LIGHT_RADIUS) lightLantern(L, i);
+      if (gameState === 'playing' && L.worldPos.distanceToSquared(travelerPivot.position) < LANTERN_LIGHT_RADIUS * LANTERN_LIGHT_RADIUS) lightLantern(L, i);
       else { L.pulse += dt; L.bodyMat.emissiveIntensity = 0.12 + Math.sin(L.pulse * 1.4) * 0.06; }
     } else if (L.litT < 1) {
       L.litT = Math.min(1, L.litT + dt / 0.8);
       L.bodyMat.emissive.copy(dimEmissive).lerp(litColor, L.litT);
       L.bodyMat.emissiveIntensity = 0.15 + L.litT * 1.4;
       L.glow.material.opacity = L.litT * 0.85; L.glow.scale.setScalar(3.5 + L.litT * 2);
+      if (L.pool) L.pool.material.opacity = L.litT * 0.5;
     } else {
       const fl = 1 + Math.sin(windClock * 6 + i) * 0.06;
       L.bodyMat.emissiveIntensity = (1.2 + nightBoost) * fl; L.glow.material.opacity = (0.55 + nightBoost * 0.35) * fl;
@@ -2046,9 +2086,27 @@ function updateLanterns(dt) {
   manageDynamicLights();
 }
 function lightLantern(L, index) {
-  L.lit = true; L.litT = 0; litCount++;
-  const cEl = document.getElementById('lanternCount'); cEl.textContent = litCount; cEl.classList.remove('pop'); requestAnimationFrame(() => cEl.classList.add('pop'));
+  if (gameState !== 'playing') return; // lanterns only count toward a live shift
+  L.lit = true; L.litT = 0; litCount++; litThisRun++;
+  const cEl = document.getElementById('lanternCount'); if (cEl) { cEl.textContent = litCount; cEl.classList.remove('pop'); requestAnimationFrame(() => cEl.classList.add('pop')); }
   lanternChime(litCount - 1); spawnPuff(L.worldPos, L.dir); wispState.celebrate = 1.2; player.idleTime = 0;
+
+  // OVERTIME: lighting a lantern mid-shift refunds time (decaying, anti-farm), shields the
+  // combo chain and pays a small score bump - a real reason to detour off the beacon route.
+  if (gameState === 'playing') {
+    const clutch = shiftClock < 10;
+    const timeBonus = 6 - Math.min(3, litThisRun * 0.4);
+    shiftClock += timeBonus;
+    comboTimer = Math.max(comboTimer, COMBO_WINDOW);
+    score += Math.round(40 * (runMod.payMult || 1)); updateScoreHud();
+    if (scoreEl) { scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
+    if (popEl) {
+      popEl.textContent = (clutch ? 'CLUTCH ' : '') + 'OVERTIME +' + Math.round(timeBonus) + 's';
+      popEl.classList.remove('show'); requestAnimationFrame(() => popEl.classList.add('show'));
+      setTimeout(() => popEl.classList.remove('show'), 1100);
+    }
+    overtimeFlash(L);
+  }
   if (litCount >= lanterns.length && !finaleShown) { finaleShown = true; showFinale(); }
 }
 function manageDynamicLights() {
@@ -2060,6 +2118,40 @@ function manageDynamicLights() {
     if (L) { pl.position.copy(L.worldPos); const flick = 1 + Math.sin(windClock * 6 + i) * 0.06; pl.intensity = (L.litT < 1 ? L.litT * 3 : (2.0 + nightBoost) * flick); }
     else pl.intensity = 0;
   }
+}
+
+// Overtime shockwave: a quick expanding bloom-ring sprite when a lantern is lit
+const _otFlashes = [];
+for (let i = 0; i < 4; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xffd27a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
+  s.position.set(0, -1000, 0); scene.add(s);
+  _otFlashes.push({ sprite: s, t: 1 });
+}
+function overtimeFlash(L) {
+  const f = _otFlashes.find(x => x.t >= 1) || _otFlashes[0];
+  f.t = 0; f.sprite.position.copy(L.worldPos); f.sprite.position.y += 0;
+}
+function updateOvertimeFlashes(dt) {
+  for (const f of _otFlashes) {
+    if (f.t >= 1) { if (f.sprite.material.opacity !== 0) f.sprite.material.opacity = 0; continue; }
+    f.t = Math.min(1, f.t + dt / 0.5);
+    f.sprite.scale.setScalar(4 + f.t * 18);
+    f.sprite.material.opacity = (1 - f.t) * 0.9;
+  }
+}
+
+// Give each run modifier its own petal mood (color + fall speed) - near-zero cost
+function applyRunVisuals() {
+  if (!petals) return;
+  let col = 0xffe0ea, speed = 1;
+  switch (runMod.name) {
+    case 'Meteor Shower': col = 0xbfd4ff; speed = 1.5; break;
+    case 'Full Moon':     col = 0xfff4d8; speed = 0.8; break;
+    case 'Blackout':      col = 0x8a93b0; speed = 0.7; break;
+    case 'Rush Hour':     col = 0xffc9a8; speed = 1.3; break;
+  }
+  petals.material.color.setHex(col);
+  petalSpeedMul = speed;
 }
 
 const _pv = new THREE.Vector3();
@@ -2083,7 +2175,7 @@ function updateParticles(dt, wind) {
     const len = _pv.length() || 1; const up = _pv.clone().multiplyScalar(1 / len);
     pdata[i*2+1] += dt;
     // gentle fall + tangential sway
-    _pv.addScaledVector(up, -pdata[i*2] * dt);
+    _pv.addScaledVector(up, -pdata[i*2] * petalSpeedMul * dt);
     _pv.x += Math.sin(pdata[i*2+1]) * (0.5 + wind) * dt;
     _pv.z += Math.cos(pdata[i*2+1] * 0.8) * (0.5 + wind) * dt;
     const sR = surfaceRadiusFromDir(up.x, up.y, up.z);
@@ -2117,13 +2209,13 @@ function showFinale() {
 function onResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); composer.setSize(window.innerWidth, window.innerHeight); tiltH.uniforms.dir.value.set(1 / window.innerWidth, 0); tiltV.uniforms.dir.value.set(0, 1 / window.innerHeight); inkGrade.uniforms.texel.value.set(1 / window.innerWidth, 1 / window.innerHeight); }
 window.addEventListener('resize', onResize);
 window.addEventListener('blur', () => { running = false; });
-window.addEventListener('focus', () => { if (started && !running) { running = true; clock.getDelta(); animate(); } });
-document.addEventListener('visibilitychange', () => { if (document.hidden) running = false; else if (started && !running) { running = true; clock.getDelta(); animate(); } });
+window.addEventListener('focus', () => { running = true; ensureLoop(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) running = false; else { running = true; ensureLoop(); } });
 
 // ----------------------------------------------------------------------------
 // Begin flow + an initial framed render behind the intro
 // ----------------------------------------------------------------------------
-let started = false;
+let started = false, audioBooted = false;
 const introEl = document.getElementById('intro');
 { const ib = document.getElementById('introBest'); if (ib) ib.textContent = bestScore; }
 function frameInitialCamera() {
@@ -2139,17 +2231,20 @@ function frameInitialCamera() {
 }
 frameInitialCamera();
 document.getElementById('beginBtn').addEventListener('click', () => {
-  if (started) return; started = true; initAudio();
-  if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume();
-  music.play().then(() => { let mv = 0; const fade = setInterval(() => { mv = Math.min(MUSIC_VOL, mv + 0.02); music.volume = audio.muted ? 0 : mv; if (mv >= MUSIC_VOL) clearInterval(fade); }, 90); }).catch(() => {});
-  const fsEl = document.documentElement;
-  (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen || (() => {})).call(fsEl);
+  if (started) return; started = true;
+  if (!audioBooted) {
+    audioBooted = true; initAudio();
+    if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume();
+    music.play().then(() => { let mv = 0; const fade = setInterval(() => { mv = Math.min(MUSIC_VOL, mv + 0.02); music.volume = audio.muted ? 0 : mv; if (mv >= MUSIC_VOL) clearInterval(fade); }, 90); }).catch(() => {});
+    const fsEl = document.documentElement;
+    (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen || (() => {})).call(fsEl);
+  } else if (audio.ctx && audio.ctx.state === 'suspended') { audio.ctx.resume(); }
   startRun();
 });
-{ const againBtn = document.getElementById('againBtn'); if (againBtn) againBtn.addEventListener('click', () => startRun()); }
 
-// initial render so the world shows behind the intro
+// initial render, then run a gentle living title screen (slow orbit + twinkle behind the menu)
 composer.render();
+running = true; loopStarted = true; ensureLoop();
 
 // small debug hook (used for verification screenshots; harmless otherwise)
 window.__game = {
