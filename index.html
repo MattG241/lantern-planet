@@ -50,16 +50,51 @@
     box-shadow: 0 6px 22px rgba(0,0,0,0.18);
   }
   #counter {
-    top: calc(14px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-    padding: 9px 18px; font-size: 15px; letter-spacing: 0.4px; white-space: nowrap; max-width: 94vw;
+    top: calc(54px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    padding: 8px 18px; font-size: 15px; letter-spacing: 0.4px; white-space: nowrap; max-width: 94vw;
     text-shadow: 0 1px 2px rgba(0,0,0,0.35);
   }
+  #shiftClock {
+    top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    padding: 5px 20px; font-size: 26px; font-weight: 700; letter-spacing: 1px; color: #fff;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  }
+  #modBadge {
+    top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
+    padding: 7px 12px; font-size: 12px; color: #cfe0ff;
+  }
+  #parcelBadge { color: #ffcf5a; }
+  #nav {
+    position: fixed; z-index: 11; width: 0; height: 0; pointer-events: none; opacity: 0; transition: opacity 0.2s;
+    border-left: 11px solid transparent; border-right: 11px solid transparent; border-bottom: 20px solid #ffcf5a;
+    filter: drop-shadow(0 0 6px rgba(255,200,90,0.6));
+  }
+  #toast {
+    position: fixed; left: 50%; top: 28%; transform: translate(-50%,-50%); z-index: 12; pointer-events: none;
+    font-size: 22px; font-weight: 700; letter-spacing: 2px; color: #ffe6a0; text-shadow: 0 2px 14px rgba(255,180,90,0.55);
+    opacity: 0; transition: opacity 0.2s ease;
+  }
+  #toast.show { opacity: 1; }
+  #results {
+    position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+    background: rgba(8,10,22,0.5); transition: opacity 0.5s ease;
+  }
+  #results.hidden { opacity: 0; pointer-events: none; }
+  #results h1 { font-size: 54px; color: #ffe9c8; margin: 2px 0 4px; }
+  #resNew { color: #ffcf5a; letter-spacing: 3px; font-weight: 700; margin: 0 0 14px; }
+  #againBtn {
+    pointer-events: auto; cursor: pointer; margin-top: 16px; padding: 14px 44px; font-size: 16px; letter-spacing: 1.5px;
+    color: #2a1c12; font-weight: 600; background: linear-gradient(180deg, #ffdca0, #f5b86e);
+    border: none; border-radius: 40px; box-shadow: 0 8px 26px rgba(245,175,95,0.45);
+    transition: transform 0.15s ease;
+  }
+  #againBtn:hover { transform: translateY(-2px); }
   #counter b { color: var(--warm); font-weight: 600; display: inline-block; }
   #counter b.pop { animation: pop 0.4s ease; }
   @keyframes pop { 0%{transform:scale(1);} 40%{transform:scale(1.6); color:#ffcf7a;} 100%{transform:scale(1);} }
 
   #deliverHint {
-    top: calc(54px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    top: calc(90px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
     padding: 6px 14px; font-size: 12.5px; white-space: nowrap; opacity: 0.92;
   }
   #deliverHint b { color: var(--warm); }
@@ -72,7 +107,7 @@
   #pop.show { opacity: 1; transform: translate(-50%, -110%); }
   #combo { color: #ffcf5a; }
   #timerWrap {
-    position: fixed; top: calc(82px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    position: fixed; top: calc(116px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
     width: 150px; height: 6px; border-radius: 4px; background: rgba(20,22,32,0.35); z-index: 10; overflow: hidden; pointer-events: none;
   }
   #timerFill { height: 100%; width: 100%; background: #8fd06a; border-radius: 4px; }
@@ -178,9 +213,13 @@
 <div id="grain"></div>
 
 <div id="hud">
+  <div id="shiftClock" class="hud-card">0:55</div>
+  <div id="modBadge" class="hud-card">Clear Night</div>
   <div id="counter" class="hud-card">Score <b id="score">0</b><b id="combo"></b><span style="display:none"><b id="lanternCount">0</b><b id="lanternTotal">0</b></span></div>
-  <div id="deliverHint" class="hud-card">Deliver to the glowing beacon &middot; <b id="dist">--</b></div>
+  <div id="deliverHint" class="hud-card">Deliver &middot; <b id="dist">--</b> <b id="parcelBadge"></b></div>
   <div id="timerWrap"><div id="timerFill"></div></div>
+  <div id="nav"></div>
+  <div id="toast"></div>
   <div id="muteBtn" class="hud-card" title="Toggle sound">~</div>
   <div id="hint" class="hud-card">
     <span>WASD</span> walk &middot; <span>click</span> free-look<br>
@@ -192,19 +231,32 @@
 <div id="finale"></div>
 <div id="pop"></div>
 
+<div id="results" class="hidden">
+  <div class="intro-card">
+    <div class="sub">SHIFT COMPLETE</div>
+    <h1 id="resScore">0</h1>
+    <div id="resNew">NEW BEST!</div>
+    <div class="controls">
+      Parcels delivered <b id="resDeliveries">0</b><br>
+      Best combo <b id="resCombo">x1</b> &nbsp;&middot;&nbsp; Best score <b id="resBest">0</b>
+    </div>
+    <button id="againBtn">PLAY AGAIN</button>
+  </div>
+</div>
+
 <div id="joystick"><div class="joy-base"></div><div class="joy-knob" id="joyKnob"></div></div>
 
 <div id="intro">
   <div class="intro-card">
-    <h1>LANTERN PLANET</h1>
-    <div class="sub">Deliver the post around a tiny round world</div>
+    <h1>NIGHT SHIFT</h1>
+    <div class="sub">Run the midnight post under a sky full of stars</div>
     <div class="controls">
       <span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> walk &nbsp;&middot;&nbsp; click for free-look<br>
       <span class="k">Shift</span> sprint &nbsp;&middot;&nbsp; <span class="k">Space</span> hop &nbsp;&middot;&nbsp; wheel zoom &nbsp;&middot;&nbsp; <span class="k">F</span> full screen<br>
-      Carry each parcel to the glowing beacon to deliver it.
+      Reach each glowing beacon before the clock runs out. Fast drops build your combo &mdash; every delivery buys back time. Grab gems to keep the chain alive.
     </div>
-    <button id="beginBtn">BEGIN</button>
-    <div class="loadnote">A wisp will keep you company. There is no hurry.</div>
+    <button id="beginBtn">START SHIFT</button>
+    <div class="loadnote">Best shift <b id="introBest">0</b> &nbsp;&middot;&nbsp; each run reshuffles the city and the night.</div>
   </div>
 </div>
 
@@ -520,17 +572,50 @@ const SOFT_TEX = radialTexture('#ffffff', '#ffffff');
 // ----------------------------------------------------------------------------
 // Sky dome - bright pastel gradient that follows the camera
 // ----------------------------------------------------------------------------
-// Flat teal void with faint scattered doodles baked into the background.
-// This solid-teal field (NOT a sky gradient) is the Messenger signature.
+// Baked night sky: deep navy gradient + faint nebula + a milky-way band + thousands
+// of varied stars, painted once into one equirect canvas (zero per-frame cost).
 {
-  const w = 1024, h = 512, cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h;
+  const w = isMobile ? 1024 : 2048, h = w / 2;
+  const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h;
   const cx = cnv.getContext('2d');
-  cx.fillStyle = '#57c3bc'; cx.fillRect(0, 0, w, h);
-  for (let i = 0; i < 90; i++) {
-    const px = Math.random() * w, py = Math.random() * h, rr = 3 + Math.random() * 15;
-    cx.globalAlpha = 0.04 + Math.random() * 0.07;
-    cx.fillStyle = Math.random() < 0.5 ? '#ffffff' : '#c2e9e3';
-    cx.beginPath(); cx.ellipse(px, py, rr, rr * (0.45 + Math.random() * 0.4), Math.random() * 3, 0, Math.PI * 2); cx.fill();
+  // vertical gradient: deep navy near the horizon -> near-black at the zenith
+  const grad = cx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#070b1c'); grad.addColorStop(0.5, '#0a1230'); grad.addColorStop(1, '#05070f');
+  cx.fillStyle = grad; cx.fillRect(0, 0, w, h);
+  // faint nebula blobs to break the flatness
+  const nebCols = ['#2a3f6a', '#3a2a5a', '#1f5a5a', '#4a2a4a'];
+  for (let i = 0; i < 6; i++) {
+    const nx = Math.random() * w, ny = Math.random() * h, nr = w * (0.1 + Math.random() * 0.18);
+    const g = cx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+    const col = nebCols[i % nebCols.length];
+    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+    cx.globalAlpha = 0.05 + Math.random() * 0.07; cx.fillStyle = g; cx.fillRect(0, 0, w, h);
+  }
+  cx.globalAlpha = 1;
+  // milky-way band: a soft blurred lighter streak + a dense dust of tiny stars along it
+  const bandY = h * (0.42 + Math.random() * 0.16), bandTilt = (Math.random() - 0.5) * 0.5;
+  cx.save(); cx.translate(0, bandY); cx.rotate(bandTilt);
+  cx.filter = 'blur(' + Math.round(w / 90) + 'px)';
+  const bg = cx.createLinearGradient(0, -h * 0.12, 0, h * 0.12);
+  bg.addColorStop(0, 'rgba(120,140,200,0)'); bg.addColorStop(0.5, 'rgba(150,165,210,0.16)'); bg.addColorStop(1, 'rgba(120,140,200,0)');
+  cx.fillStyle = bg; cx.fillRect(-w, -h * 0.12, w * 3, h * 0.24);
+  cx.filter = 'none';
+  for (let i = 0; i < (isMobile ? 700 : 1600); i++) {
+    cx.globalAlpha = 0.1 + Math.random() * 0.5;
+    cx.fillStyle = Math.random() < 0.5 ? '#cdd8ff' : '#fff';
+    cx.fillRect(-w + Math.random() * w * 3, (Math.random() - 0.5) * h * 0.2, 1, 1);
+  }
+  cx.restore(); cx.globalAlpha = 1;
+  // the main star field: most dim, a few bright, varied colour
+  const starN = isMobile ? 1400 : 3600;
+  for (let i = 0; i < starN; i++) {
+    const px = Math.random() * w, py = Math.random() * h;
+    const b = Math.pow(Math.random(), 3.0);               // most stars dim
+    const r = 0.4 + b * 1.7;
+    const t = Math.random();
+    cx.fillStyle = t < 0.72 ? '#ffffff' : t < 0.87 ? '#cfe0ff' : t < 0.96 ? '#ffe6c0' : '#ffd0a0';
+    cx.globalAlpha = 0.25 + b * 0.75;
+    cx.beginPath(); cx.arc(px, py, r, 0, Math.PI * 2); cx.fill();
   }
   cx.globalAlpha = 1;
   const bgTex = new THREE.CanvasTexture(cnv);
@@ -1143,38 +1228,77 @@ if (_eastDir.lengthSq() < 0.01) _eastDir.set(1, 0, 0);
 _eastDir.normalize();
 const _dayCol = new THREE.Color('#fff4e6'), _duskCol = new THREE.Color('#ff9a52');
 const _hemiDay = new THREE.Color('#f2f2ea'), _hemiNight = new THREE.Color('#3b4a72');
-let stars;
+// Twinkling, bloom-bright star layer (the baked background gives density; this gives life)
+let stars, starMat;
 {
-  const N = isMobile ? 360 : 650, pos = new Float32Array(N * 3);
+  const N = isMobile ? 420 : 820, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), sz = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u), r = 470;
-    pos[i * 3] = s * Math.cos(th) * r; pos[i * 3 + 1] = u * r; pos[i * 3 + 2] = s * Math.sin(th) * r;
+    pos[i*3] = s*Math.cos(th)*r; pos[i*3+1] = u*r; pos[i*3+2] = s*Math.sin(th)*r;
+    const b = Math.pow(Math.random(), 2.2);
+    const tnt = Math.random(); const c = tnt < 0.7 ? [1,1,1] : tnt < 0.86 ? [0.81,0.88,1] : [1,0.9,0.75];
+    const v = 0.6 + b * 0.4; col[i*3]=c[0]*v; col[i*3+1]=c[1]*v; col[i*3+2]=c[2]*v;
+    sz[i] = 1.2 + b * 2.9;
   }
-  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const m = new THREE.PointsMaterial({ color: 0xfff3d6, size: 2.0, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false });
-  m.userData.outlineParameters = { visible: false };
-  stars = new THREE.Points(geo, m); stars.userData.outlineParameters = { visible: false }; scene.add(stars);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(sz, 1));
+  starMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } }, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
+    vertexShader: 'attribute vec3 aColor; attribute float aSize; uniform float uTime; varying vec3 vCol; varying float vTw; void main(){ vCol=aColor; vTw=0.55+0.45*sin(uTime*2.0+aSize*7.0+position.x*0.3); vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv; gl_PointSize=aSize*(0.7+vTw*0.5); }',
+    fragmentShader: 'varying vec3 vCol; varying float vTw; void main(){ float d=length(gl_PointCoord-0.5); float a=1.0-smoothstep(0.0,0.5,d); gl_FragColor=vec4(vCol*1.7*vTw, a); }',
+  });
+  starMat.userData.outlineParameters = { visible: false };
+  stars = new THREE.Points(geo, starMat); stars.userData.outlineParameters = { visible: false }; stars.frustumCulled = false; scene.add(stars);
 }
-const _sunNow = new THREE.Vector3();
+// Moon (additive halo + a soft cratered disc) - the brightest thing in the sky
+const _moonDir = new THREE.Vector3(-0.42, 0.5, -0.55).normalize();
+const _moonAxis = new THREE.Vector3(0.1, 1, 0.1).normalize();
+{
+  const moon = new THREE.Group();
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT_TEX, color: 0xcdd9ff, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.85, depthWrite: false, depthTest: false, fog: false }));
+  halo.scale.set(64, 64, 1); halo.material.userData.outlineParameters = { visible: false }; moon.add(halo);
+  const dt2 = (function(){ const s=128,c=document.createElement('canvas'); c.width=c.height=s; const x=c.getContext('2d'); const g=x.createRadialGradient(s*0.4,s*0.4,4,s/2,s/2,s/2); g.addColorStop(0,'#ffffff'); g.addColorStop(0.7,'#e8ecff'); g.addColorStop(1,'#b9c4e6'); x.fillStyle=g; x.beginPath(); x.arc(s/2,s/2,s/2-2,0,Math.PI*2); x.fill(); x.globalAlpha=0.16; x.fillStyle='#8b95b8'; for(let k=0;k<8;k++){ x.beginPath(); x.arc(s*0.28+Math.random()*s*0.44, s*0.28+Math.random()*s*0.44, 5+Math.random()*12,0,Math.PI*2); x.fill(); } const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t; })();
+  const disc = new THREE.Sprite(new THREE.SpriteMaterial({ map: dt2, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false, fog: false }));
+  disc.scale.set(24, 24, 1); disc.material.userData.outlineParameters = { visible: false }; moon.add(disc);
+  moon.position.copy(_moonDir).multiplyScalar(460);
+  scene.add(moon); window.__moon = moon;
+}
+// Shooting stars (pooled, fire on a timer)
+const _shoot = []; let _shootTimer = 4;
+for (let i = 0; i < 2; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT_TEX, color: 0xffffff, blending: THREE.AdditiveBlending, transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false }));
+  s.material.userData.outlineParameters = { visible: false }; s.visible = false; scene.add(s);
+  _shoot.push({ spr: s, life: 0, from: new THREE.Vector3(), to: new THREE.Vector3() });
+}
+const NIGHT_LEVEL = 0.72;
+let nightT = 0;
+// Locked moonlit night: cool key + soft fill, stars twinkle, shooting stars streak.
 function updateDayNight(dt) {
-  dayTime = (dayTime + dt / DAY_PERIOD) % 1;
-  const p = dayTime * Math.PI * 2;
-  const elev = Math.sin(p);                                   // +1 noon, -1 midnight
-  const day = THREE.MathUtils.smoothstep(elev, -0.10, 0.32);  // 0 night .. 1 day
-  const night = 1 - day;
-  const dusk = Math.pow(1 - Math.min(1, Math.abs(elev) / 0.4), 2);
-  // sun arcs over the town: rise (east) -> overhead -> set (west) -> below
-  _sunNow.copy(townDir).multiplyScalar(elev).addScaledVector(_eastDir, Math.cos(p)).normalize();
-  sunDir.copy(_sunNow);
-  sun.position.copy(sunDir).multiplyScalar(140);
-  sun.intensity = 1.75 * Math.max(0, elev * 0.85 + 0.12);
-  sun.color.copy(_dayCol).lerp(_duskCol, dusk);
-  hemi.intensity = 0.40 + day * 1.0;
-  hemi.color.copy(_hemiNight).lerp(_hemiDay, day);
-  ambient.intensity = 0.24 + day * 0.40;
-  nightBoost = 0.4 + night * 1.4;
-  if (stars) stars.material.opacity = Math.max(0, night - 0.15);
-  inkGrade.uniforms.uNight.value = night;
+  nightT += dt;
+  starMat.uniforms.uTime.value = nightT;
+  inkGrade.uniforms.uNight.value = NIGHT_LEVEL;
+  nightBoost = 1.6 * runLanternMul;
+  sun.position.copy(_moonDir).multiplyScalar(140);
+  sun.intensity = 0.42; sun.color.set('#aebfe8');
+  hemi.intensity = 0.72; hemi.color.set('#39497a');
+  ambient.intensity = 0.42;
+  _shootTimer -= dt;
+  if (_shootTimer <= 0) {
+    _shootTimer = runMeteorFast ? (1.2 + Math.random() * 2.5) : (5 + Math.random() * 9);
+    const s = _shoot.find(x => x.life <= 0);
+    if (s) { const d = randDir(); if (d.y < 0) d.y = -d.y; s.from.copy(d).multiplyScalar(460); s.to.copy(s.from).addScaledVector(randDir(), 100); s.life = 1; }
+  }
+  for (const s of _shoot) {
+    if (s.life > 0) {
+      s.life -= dt * 1.3; s.spr.visible = s.life > 0;
+      s.spr.position.lerpVectors(s.from, s.to, 1 - s.life);
+      const sc = 16 * Math.max(0.2, Math.sin(Math.max(0, s.life) * Math.PI));
+      s.spr.scale.set(sc, sc * 0.16, 1);
+      s.spr.material.opacity = Math.sin(Math.max(0, s.life) * Math.PI);
+    }
+  }
 }
 
 // Scattered low bushes for ground texture (instanced for perf)
@@ -1307,57 +1431,171 @@ const beacon = new THREE.Group();
   beacon.userData = { pillar, arrow, ring };
   scene.add(beacon);
 }
-let deliveries = 0, score = 0, combo = 0;
-let deliverTimeLeft = 0, deliverTimeLimit = 1;
-let currentTarget = null;
-const scoreEl = document.getElementById('score');
-const comboEl = document.getElementById('combo');
-const distEl = document.getElementById('dist');
-const popEl = document.getElementById('pop');
-const timerFill = document.getElementById('timerFill');
-const DELIVER_RADIUS = 4.2;
-function updateScoreHud() {
-  if (scoreEl) scoreEl.textContent = score;
-  if (comboEl) comboEl.textContent = combo > 1 ? '  x' + combo : '';
+// =========================================================================
+// NIGHT SHIFT - run state machine, randomized targets/gems, scoring, high score
+// =========================================================================
+let gameState = 'menu';                    // 'menu' | 'playing' | 'results'
+let deliveries = 0, score = 0, combo = 1, bestCombo = 1;
+let deliverTimeLeft = 0, deliverTimeLimit = 1, comboTimer = 0;
+let shiftClock = 0, currentTarget = null, parcelType = 'NORMAL';
+let runLanternMul = 1, runMeteorFast = false, loopStarted = false;
+const COMBO_WINDOW = 14, START_TIME = 55, DELIVER_RADIUS = 4.2, COMBO_MAX = 9;
+const BEST_KEY = 'nightshift.best';
+let bestScore = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
+const scoreEl = document.getElementById('score'), comboEl = document.getElementById('combo');
+const distEl = document.getElementById('dist'), popEl = document.getElementById('pop');
+const timerFill = document.getElementById('timerFill'), clockEl = document.getElementById('shiftClock');
+const navEl = document.getElementById('nav'), modBadge = document.getElementById('modBadge'), parcelBadge = document.getElementById('parcelBadge');
+
+const MODS = [
+  { name: 'Clear Night', desc: 'a calm shift' },
+  { name: 'Rush Hour', desc: 'clock drains faster, pay is up', drain: 1.3, payMult: 1.3 },
+  { name: 'Full Moon', desc: 'extra time, brighter, fewer gems', startBonus: 12, moonScale: 1.6, fewerGems: true, lanternMul: 1.1 },
+  { name: 'Blackout', desc: 'town dimmed, bonuses up', payMult: 1.5, lanternMul: 0.4 },
+  { name: 'Meteor Shower', desc: 'shooting stars, gems +50%', meteorFast: true, gemMult: 1.5 },
+];
+let runMod = MODS[0];
+const PARCELS = {
+  NORMAL: { mult: 1.0, col: '#caa06a', label: '' },
+  RUSH: { mult: 2.0, budgetMult: 0.55, col: '#e0664a', label: 'RUSH x2' },
+  FRAGILE: { mult: 1.5, col: '#8ad0ff', label: 'FRAGILE' },
+  BULK: { mult: 1.0, timeBonus: 3, col: '#9ec46a', label: 'BULK +time' },
+};
+function randDirM() { const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u); return new THREE.Vector3(s * Math.cos(th), u, s * Math.sin(th)); }
+function dirNearM(center, maxAng) {
+  const ang = Math.sqrt(Math.random()) * maxAng, az = Math.random() * Math.PI * 2;
+  const up = center.clone().normalize();
+  const t = (Math.abs(up.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
+  t.addScaledVector(up, -t.dot(up)).normalize();
+  const b = new THREE.Vector3().crossVectors(up, t);
+  const off = t.multiplyScalar(Math.cos(az)).addScaledVector(b, Math.sin(az));
+  return up.clone().multiplyScalar(Math.cos(ang)).addScaledVector(off, Math.sin(ang)).normalize();
 }
-function pickNewTarget() {
-  if (mailboxes.length === 0) return;
-  let next = currentTarget;
-  for (let t = 0; t < 24 && next === currentTarget; t++) next = mailboxes[Math.floor(Math.random() * mailboxes.length)];
-  currentTarget = next;
+function fmtClock(t) { t = Math.max(0, t); const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ':' + (s < 10 ? '0' : '') + s; }
+function updateScoreHud() { if (scoreEl) scoreEl.textContent = score; if (comboEl) comboEl.textContent = combo > 1 ? '  x' + combo : ''; }
+let _toastH = 0;
+function toast(msg) { const t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.add('show'); clearTimeout(_toastH); _toastH = setTimeout(() => t.classList.remove('show'), 1300); }
+
+let targetOrder = [], targetIdx = 0;
+function reshuffleTargets() {
+  targetOrder = mailboxes.map((_, i) => i);
+  for (let i = targetOrder.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = targetOrder[i]; targetOrder[i] = targetOrder[j]; targetOrder[j] = t; }
+  targetIdx = 0;
+}
+function applyTarget(idx) {
+  currentTarget = mailboxes[idx];
   placeOnPlanet(beacon, currentTarget.dir, {});
-  const dx = currentTarget.pos.x - travelerPivot.position.x, dy = currentTarget.pos.y - travelerPivot.position.y, dz = currentTarget.pos.z - travelerPivot.position.z;
-  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  deliverTimeLimit = THREE.MathUtils.clamp(dist * 0.5 + 7, 10, 40); // farther drops get more time
+  const pt = PARCELS[parcelType];
+  if (parcel && parcel.children[0]) { parcel.children[0].material = toonMat(pt.col, { rim: 0.2 }); }
+  if (parcelBadge) parcelBadge.textContent = pt.label;
+  const dist = Math.sqrt(currentTarget.pos.distanceToSquared(travelerPivot.position));
+  deliverTimeLimit = THREE.MathUtils.clamp(dist * 0.5 + 7, 8, 40) * (pt.budgetMult || 1);
   deliverTimeLeft = deliverTimeLimit;
+}
+function nextTarget() {
+  if (mailboxes.length === 0) return;
+  if (targetIdx >= targetOrder.length) reshuffleTargets();
+  let idx = targetOrder[targetIdx++];
+  if (currentTarget && mailboxes[idx] === currentTarget && targetIdx < targetOrder.length) idx = targetOrder[targetIdx++];
+  const r = Math.random();
+  parcelType = r < (0.10 + deliveries * 0.006) ? 'RUSH' : r < 0.22 ? 'FRAGILE' : r < 0.34 ? 'BULK' : 'NORMAL';
+  applyTarget(idx);
+}
+function firstTarget() {
+  // nearest mailbox that is still a fair walk away, so a run never opens with a freebie
+  const MIN = 16, MIN2 = MIN * MIN;
+  let best = -1, bestD = Infinity, far = 0, farD = -1;
+  for (let i = 0; i < mailboxes.length; i++) {
+    const d = mailboxes[i].pos.distanceToSquared(travelerPivot.position);
+    if (d > farD) { farD = d; far = i; }
+    if (d >= MIN2 && d < bestD) { bestD = d; best = i; }
+  }
+  if (best < 0) best = far;
+  parcelType = 'NORMAL'; applyTarget(best);
+}
+const _np = new THREE.Vector3();
+function updateNav() {
+  if (!navEl || !currentTarget) return;
+  _np.copy(currentTarget.pos).applyMatrix4(camera.matrixWorldInverse);
+  const behind = _np.z > 0;
+  _np.copy(currentTarget.pos).project(camera);
+  let nx = _np.x, ny = _np.y; if (behind) { nx = -nx; ny = -ny; }
+  const onScreen = !behind && Math.abs(_np.x) < 0.8 && Math.abs(_np.y) < 0.8;
+  if (onScreen) { navEl.style.opacity = '0'; return; }
+  navEl.style.opacity = '0.92';
+  const cx = window.innerWidth / 2, cy = window.innerHeight / 2, rad = Math.min(cx, cy) * 0.7;
+  const len = Math.hypot(nx, ny) || 1;
+  navEl.style.left = (cx + (nx / len) * rad) + 'px';
+  navEl.style.top = (cy - (ny / len) * rad) + 'px';
+  navEl.style.transform = 'translate(-50%,-50%) rotate(' + (Math.atan2(nx, ny)) + 'rad)';
+}
+function deliver() {
+  const frac = deliverTimeLimit > 0 ? THREE.MathUtils.clamp(deliverTimeLeft / deliverTimeLimit, 0, 1) : 0;
+  const pt = PARCELS[parcelType];
+  if (frac >= 0.35) combo = Math.min(combo + 1, COMBO_MAX);
+  comboTimer = COMBO_WINDOW; bestCombo = Math.max(bestCombo, combo);
+  const pts = Math.round(100 * (1 + frac * 1.5) * combo * (pt.mult || 1) * (runMod.payMult || 1));
+  score += pts; deliveries++;
+  shiftClock += (7 - Math.min(3, deliveries * 0.12)) + (pt.timeBonus || 0);
+  updateScoreHud();
+  if (scoreEl) { scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
+  spawnPuff(currentTarget.pos, currentTarget.dir);
+  lanternChime(Math.min(combo, 7));
+  wispState.celebrate = 1.7; player.idleTime = 0;
+  const clutch = deliverTimeLeft < deliverTimeLimit * 0.12;
+  if (popEl) { popEl.textContent = (clutch ? 'CLUTCH! ' : '') + '+' + pts + (combo > 1 ? '  x' + combo : ''); popEl.classList.remove('show'); requestAnimationFrame(() => popEl.classList.add('show')); setTimeout(() => popEl.classList.remove('show'), 1100); }
+  if (deliveries === 5 || deliveries === 10 || deliveries === 20 || deliveries === 30) toast(deliveries + ' DELIVERED');
+  else if (combo === 5 || combo === 8) toast('COMBO x' + combo);
+  nextTarget();
 }
 function updateDelivery(dt) {
   if (!currentTarget) return;
+  const beat = 2.0 + (shiftClock < 12 ? (12 - shiftClock) * 0.45 : 0);
   beacon.userData.arrow.position.y = 4.2 + Math.sin(windClock * 3) * 0.3;
   beacon.userData.arrow.rotation.y += dt * 1.6;
-  beacon.userData.pillar.material.opacity = 0.42 + Math.sin(windClock * 2.5) * 0.12;
-  const rs = 1 + Math.sin(windClock * 2.5) * 0.12; beacon.userData.ring.scale.set(rs, rs, rs);
-  // per-parcel timer: running out only breaks the combo, never fails (stays cozy)
-  if (deliverTimeLeft > 0) { deliverTimeLeft = Math.max(0, deliverTimeLeft - dt); if (deliverTimeLeft === 0 && combo > 0) { combo = 0; updateScoreHud(); } }
-  if (timerFill) { const f = deliverTimeLimit > 0 ? deliverTimeLeft / deliverTimeLimit : 0; timerFill.style.width = (f * 100) + '%'; timerFill.style.background = f > 0.5 ? '#8fd06a' : (f > 0.2 ? '#e6c24a' : '#e0664a'); }
-  const dx = currentTarget.pos.x - travelerPivot.position.x, dy = currentTarget.pos.y - travelerPivot.position.y, dz = currentTarget.pos.z - travelerPivot.position.z;
-  const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  beacon.userData.pillar.material.opacity = 0.42 + Math.sin(windClock * beat) * 0.16;
+  const rs = 1 + Math.sin(windClock * beat) * 0.14; beacon.userData.ring.scale.set(rs, rs, rs);
+  if (deliverTimeLeft > 0) deliverTimeLeft = Math.max(0, deliverTimeLeft - dt);
+  comboTimer -= dt;
+  if (comboTimer <= 0 && combo > 1) { combo = 1; updateScoreHud(); toast('chain broken'); }
+  if (timerFill) { const f = THREE.MathUtils.clamp(comboTimer / COMBO_WINDOW, 0, 1); timerFill.style.width = (f * 100) + '%'; timerFill.style.opacity = combo > 1 ? '1' : '0.2'; timerFill.style.background = '#ffcf5a'; }
+  const d = Math.sqrt(currentTarget.pos.distanceToSquared(travelerPivot.position));
   if (distEl) distEl.textContent = Math.round(d) + 'm';
-  if (d < DELIVER_RADIUS) {
-    deliveries++;
-    const inTime = deliverTimeLeft > 0;
-    combo = inTime ? Math.min(combo + 1, 9) : 0;
-    const pts = Math.round((100 + Math.round(deliverTimeLeft) * 5) * (1 + Math.max(0, combo - 1) * 0.5));
-    score += pts; updateScoreHud();
-    if (scoreEl) { scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
-    spawnPuff(currentTarget.pos, currentTarget.dir);
-    lanternChime(Math.min(combo, 7));
-    wispState.celebrate = 1.5; player.idleTime = 0;
-    if (popEl) { popEl.textContent = '+' + pts + (combo > 1 ? '   combo x' + combo : ''); popEl.classList.remove('show'); requestAnimationFrame(() => popEl.classList.add('show')); setTimeout(() => popEl.classList.remove('show'), 1100); }
-    pickNewTarget();
-  }
+  updateNav();
+  if (d < DELIVER_RADIUS) deliver();
 }
-pickNewTarget();
+function startRun() {
+  runMod = MODS[Math.floor(Math.random() * MODS.length)];
+  runLanternMul = runMod.lanternMul || 1; runMeteorFast = !!runMod.meteorFast;
+  if (window.__moon) window.__moon.scale.setScalar(runMod.moonScale || 1);
+  if (modBadge) { modBadge.textContent = runMod.name; modBadge.title = runMod.desc; }
+  deliveries = 0; score = 0; combo = 1; bestCombo = 1; comboTimer = 0;
+  shiftClock = START_TIME + (runMod.startBonus || 0);
+  updateScoreHud();
+  reshuffleTargets();
+  const hideGems = runMod.fewerGems ? 0.35 : 0;
+  for (const c of coins) {
+    if (Math.random() < hideGems) { c.mesh.visible = false; c.dead = true; continue; }
+    c.mesh.visible = true; c.dead = false;
+    let dir = randDirM(); if (dir.dot(townDir) > Math.cos(0.16)) dir = dirNearM(townDir, 0.5 + Math.random());
+    c.dir.copy(dir).normalize(); c.pos.copy(c.dir).multiplyScalar(surfaceRadius(c.dir) + 1.5); c.mesh.position.copy(c.pos);
+  }
+  firstTarget();
+  gameState = 'playing';
+  const r = document.getElementById('results'); if (r) { r.classList.add('hidden'); r.style.display = 'none'; }
+  const intro = document.getElementById('intro'); if (intro) { intro.classList.add('hidden'); setTimeout(() => { intro.style.display = 'none'; }, 600); }
+  running = true; clock.getDelta(); if (!loopStarted) { loopStarted = true; animate(); }
+}
+function endRun() {
+  gameState = 'results';
+  const isBest = score > bestScore;
+  if (isBest) { bestScore = score; try { localStorage.setItem(BEST_KEY, String(bestScore)); } catch (e) {} }
+  if (clockEl) clockEl.textContent = '0:00';
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('resScore', score); set('resDeliveries', deliveries); set('resCombo', 'x' + bestCombo); set('resBest', bestScore);
+  const nb = document.getElementById('resNew'); if (nb) nb.style.display = isBest ? 'block' : 'none';
+  const r = document.getElementById('results'); if (r) { r.style.display = 'flex'; r.classList.remove('hidden'); }
+}
 // ---- Collectible gems (extra score, reward exploring the bigger world) ----
 const coins = [];
 const _coinGeo = new THREE.OctahedronGeometry(0.5, 0);
@@ -1376,11 +1614,13 @@ for (let i = 0; i < 26; i++) {
 }
 function updateCoins(dt) {
   for (const c of coins) {
+    if (c.dead || !c.mesh.visible) continue;
     c.mesh.rotation.y += dt * 2.2;
     c.mesh.position.copy(c.pos).addScaledVector(c.dir, Math.sin(windClock * 2 + c.phase) * 0.2);
     const dx = c.pos.x - travelerPivot.position.x, dy = c.pos.y - travelerPivot.position.y, dz = c.pos.z - travelerPivot.position.z;
     if (dx * dx + dy * dy + dz * dz < 6.76) {
-      score += 15; updateScoreHud();
+      score += Math.round(15 * (runMod.gemMult || 1)); updateScoreHud();
+      comboTimer = Math.max(comboTimer, COMBO_WINDOW * 0.7); // gems keep the chain alive
       if (scoreEl) { scoreEl.classList.remove('pop'); requestAnimationFrame(() => scoreEl.classList.add('pop')); }
       spawnPuff(c.pos, c.dir);
       if (audio.ctx && !audio.muted) lanternChime(6);
@@ -1620,8 +1860,15 @@ function animate() {
   updateCharacterAnim(dt);
   updateWisp(dt);
   updateLanterns(dt);
-  updateDelivery(dt);
-  updateCoins(dt);
+  if (gameState === 'playing') {
+    shiftClock -= dt * (runMod.drain || 1);
+    if (clockEl) { clockEl.textContent = fmtClock(shiftClock); clockEl.style.color = shiftClock < 8 ? '#ff6a5a' : (shiftClock < 15 ? '#ffcf5a' : '#fff'); }
+    updateDelivery(dt);
+    updateCoins(dt);
+    if (shiftClock <= 0) endRun();
+  } else if (gameState === 'results') {
+    rotateCamYaw(dt * 0.1); // slow beauty-shot orbit over the night planet
+  }
   updateParticles(dt, wind);
   updateClouds(dt);
   updatePuffs(dt, _up.copy(playerDir));
@@ -1659,11 +1906,13 @@ function resolveCollisions() {
 function updateMovement(dt) {
   _up.copy(playerDir); // gravity up = surface normal
   let f = 0, r = 0;
-  if (keys['KeyW'] || keys['ArrowUp']) f += 1;
-  if (keys['KeyS'] || keys['ArrowDown']) f -= 1;
-  if (keys['KeyD'] || keys['ArrowRight']) r += 1;
-  if (keys['KeyA'] || keys['ArrowLeft']) r -= 1;
-  if (touchMove.active) { f -= touchMove.dy; r += touchMove.dx; }
+  if (gameState === 'playing') {
+    if (keys['KeyW'] || keys['ArrowUp']) f += 1;
+    if (keys['KeyS'] || keys['ArrowDown']) f -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) r += 1;
+    if (keys['KeyA'] || keys['ArrowLeft']) r -= 1;
+    if (touchMove.active) { f -= touchMove.dy; r += touchMove.dx; }
+  }
 
   // movement basis from the (parallel-transported) camera forward, projected to tangent
   _camFwdT.copy(camForward).addScaledVector(_up, -camForward.dot(_up));
@@ -1876,6 +2125,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) runni
 // ----------------------------------------------------------------------------
 let started = false;
 const introEl = document.getElementById('intro');
+{ const ib = document.getElementById('introBest'); if (ib) ib.textContent = bestScore; }
 function frameInitialCamera() {
   _up.copy(playerDir);
   _camDir.copy(camForward).addScaledVector(_up, -camForward.dot(_up)).normalize();
@@ -1894,9 +2144,9 @@ document.getElementById('beginBtn').addEventListener('click', () => {
   music.play().then(() => { let mv = 0; const fade = setInterval(() => { mv = Math.min(MUSIC_VOL, mv + 0.02); music.volume = audio.muted ? 0 : mv; if (mv >= MUSIC_VOL) clearInterval(fade); }, 90); }).catch(() => {});
   const fsEl = document.documentElement;
   (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen || (() => {})).call(fsEl);
-  introEl.classList.add('hidden'); setTimeout(() => { introEl.style.display = 'none'; }, 1200);
-  running = true; clock.getDelta(); animate();
+  startRun();
 });
+{ const againBtn = document.getElementById('againBtn'); if (againBtn) againBtn.addEventListener('click', () => startRun()); }
 
 // initial render so the world shows behind the intro
 composer.render();
@@ -1916,6 +2166,7 @@ window.__game = {
     return { litCount, minGap: Math.round(minGap * 100) / 100, dir: [playerDir.x, playerDir.y, playerDir.z] };
   },
   setDay: (t) => { dayTime = ((t % 1) + 1) % 1; return dayTime; },
+  forceEnd: () => { endRun(); return { state: gameState, score, best: bestScore }; },
   warpToTarget: () => {
     if (!currentTarget) return { deliveries };
     playerDir.copy(currentTarget.dir); camForward.copy(_eastDir);
