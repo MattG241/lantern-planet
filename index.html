@@ -201,6 +201,7 @@ import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 /* =========================================================================
@@ -334,6 +335,16 @@ class OutlineRenderPass extends Pass {
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), Q.bloom, 0.5, 0.82);
 composer.addPass(new OutlineRenderPass(scene, camera, outlineEffect));
 composer.addPass(bloomPass);
+// Tilt-shift: sharp band through the middle, blurred top & bottom = the "miniature" tiny-planet look
+const TiltShiftShader = {
+  uniforms: { tDiffuse: { value: null }, dir: { value: new THREE.Vector2(1 / window.innerWidth, 0) }, strength: { value: 6 }, focusY: { value: 0.54 }, band: { value: 0.16 }, edge: { value: 0.52 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: 'uniform sampler2D tDiffuse; uniform vec2 dir; uniform float strength; uniform float focusY; uniform float band; uniform float edge; varying vec2 vUv; void main(){ float m = smoothstep(band, edge, abs(vUv.y - focusY)); float s = m * strength; vec4 c = texture2D(tDiffuse, vUv) * 0.227; c += (texture2D(tDiffuse, vUv + dir*s) + texture2D(tDiffuse, vUv - dir*s)) * 0.194; c += (texture2D(tDiffuse, vUv + dir*2.0*s) + texture2D(tDiffuse, vUv - dir*2.0*s)) * 0.121; c += (texture2D(tDiffuse, vUv + dir*3.0*s) + texture2D(tDiffuse, vUv - dir*3.0*s)) * 0.054; c += (texture2D(tDiffuse, vUv + dir*4.0*s) + texture2D(tDiffuse, vUv - dir*4.0*s)) * 0.016; gl_FragColor = c; }',
+};
+const tiltH = new ShaderPass(TiltShiftShader); tiltH.uniforms.dir.value.set(1 / window.innerWidth, 0); tiltH.uniforms.strength.value = isMobile ? 5 : 7;
+const tiltV = new ShaderPass(TiltShiftShader); tiltV.uniforms.dir.value.set(0, 1 / window.innerHeight); tiltV.uniforms.strength.value = isMobile ? 5 : 7;
+composer.addPass(tiltH);
+composer.addPass(tiltV);
 composer.addPass(new OutputPass());
 
 // ----------------------------------------------------------------------------
@@ -550,6 +561,10 @@ function tangentToward(from, to) {
 
 // occupancy so props do not overlap (angular)
 const occupied = [];
+// Solid-prop colliders for player collision (slide-around resolution)
+const colliders = [];
+const PLAYER_R = 0.55;
+function addCollider(p, r) { colliders.push({ x: p.x, y: p.y, z: p.z, r }); }
 function freeSpot(dir, minAng) {
   for (const o of occupied) if (dir.dot(o.dir) > Math.cos(minAng + o.ang)) return false;
   return true;
@@ -604,36 +619,64 @@ function makeShrine() {
 const SHOP_WALL = ['#f4efe4', '#ece4d4', '#f6f2ea', '#e9e1d1', '#f0d6db', '#d8e5e9', '#f3dfba'];
 const SHOP_WOOD = ['#6a6158', '#7a6a5b', '#5e564e'];
 const ROOFS = ['#9a958c', '#8a8782', '#b5634a', '#7c8a90', '#6f6b64'];
+const FACADE_WALLS = ['#f4efe4', '#ece4d4', '#f0d6db', '#d8e5e9', '#f3dfba', '#e9e1d1'];
+// Procedural facade textures: window grids (some lit) + timber lines baked onto the walls.
+// Rich detail with zero extra geometry; a small cache is shared across all buildings.
+const _facadeCache = [];
+function makeFacadeTexture(idx) {
+  if (_facadeCache[idx]) return _facadeCache[idx];
+  const s = 256, cv = document.createElement('canvas'); cv.width = cv.height = s; const x = cv.getContext('2d');
+  x.fillStyle = FACADE_WALLS[idx % FACADE_WALLS.length]; x.fillRect(0, 0, s, s);
+  x.strokeStyle = 'rgba(90,80,70,0.09)'; x.lineWidth = 2;
+  for (let i = 1; i < 4; i++) { x.beginPath(); x.moveTo(i * s / 4, 0); x.lineTo(i * s / 4, s); x.stroke(); }
+  const mw = s * 0.18, mh = s * 0.16;
+  for (let r2 = 0; r2 < 3; r2++) for (let cc = 0; cc < 3; cc++) {
+    const wx = s * 0.14 + cc * (s * 0.28), wy = s * 0.07 + r2 * (s * 0.30);
+    const lit = ((idx * 7 + r2 * 3 + cc) % 4) === 0;
+    x.fillStyle = '#5e4d3e'; x.fillRect(wx - 3, wy - 3, mw + 6, mh + 6);
+    x.fillStyle = lit ? '#ffd98a' : '#9fb6be'; x.fillRect(wx, wy, mw, mh);
+    x.strokeStyle = '#5e4d3e'; x.lineWidth = 2;
+    x.beginPath(); x.moveTo(wx + mw / 2, wy); x.lineTo(wx + mw / 2, wy + mh); x.moveTo(wx, wy + mh / 2); x.lineTo(wx + mw, wy + mh / 2); x.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.needsUpdate = true;
+  _facadeCache[idx] = t; return t;
+}
 function makeBuilding(seed) {
   const g = new THREE.Group();
   const r = (a) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return a[seed % a.length]; };
   const w = 3.4 + (seed % 3) * 0.6, d = 3.0;
-  const wall = toonMat(r(SHOP_WALL)), wood = toonMat(r(SHOP_WOOD)), roofMat = toonMat(r(ROOFS));
-  // ground floor
-  const g0 = new THREE.Mesh(new THREE.BoxGeometry(w, 2.2, d), wall); g0.position.y = 1.1;
-  // shopfront beam + warm windows (emissive)
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(w + 0.2, 0.35, d + 0.2), wood); beam.position.y = 2.15;
-  const winMat = toonMat('#ffdf9a', { emissive: '#ffb152', emissiveIntensity: 0.55, rim: 0.2 });
-  const win = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 1.0, 0.12), winMat);
-  win.position.set(0, 1.1, d / 2 + 0.02);
-  // upper floor (slightly inset)
-  const g1 = new THREE.Mesh(new THREE.BoxGeometry(w - 0.2, 1.7, d - 0.2), wall); g1.position.y = 3.15;
-  const win2 = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, 0.7, 0.12), toonMat('#caa', { rim: 0.2 }));
-  win2.position.set(0, 3.2, d / 2 - 0.08);
-  // gabled roof (two sloped slabs + ridge), with eaves overhang
-  const rw = w + 1.2;
-  const slabGeo = new THREE.BoxGeometry(rw, 0.34, d / 1.6 + 0.7);
-  const rfL = new THREE.Mesh(slabGeo, roofMat); rfL.position.set(0, 4.5, -d / 4); rfL.rotation.x = -0.62;
-  const rfR = new THREE.Mesh(slabGeo, roofMat); rfR.position.set(0, 4.5,  d / 4); rfR.rotation.x = 0.62;
-  const ridge = new THREE.Mesh(new THREE.BoxGeometry(rw, 0.34, 0.34), roofMat); ridge.position.y = 5.02;
-  // hanging red lantern at the corner of the shopfront
-  const lant = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.34, 5, 10),
-    toonMat('#e06048', { emissive: '#e85a2a', emissiveIntensity: 0.5, rim: 0.3 }));
-  lant.position.set(w / 2 - 0.4, 2.0, d / 2 + 0.25);
-  const string = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 5), wood);
-  string.position.set(w / 2 - 0.4, 2.35, d / 2 + 0.25);
-  [g0, beam, win, g1, win2, rfL, rfR, ridge, lant, string].forEach(m => { m.castShadow = true; m.receiveShadow = true; g.add(m); });
-  g.scale.set(1, 0.82 + (Math.abs(seed) % 5) * 0.2, 1); // varied heights (short shops to tall towers)
+  const facade = makeFacadeTexture(Math.abs(seed) % 6);
+  const wall = toonMat('#ffffff', { rim: 0.14 }); wall.map = facade;
+  const wallPlain = toonMat(r(SHOP_WALL), { rim: 0.14 });
+  const wood = toonMat(r(SHOP_WOOD)), roofMat = toonMat(r(ROOFS));
+  const trimMat = toonMat('#6a5e50', { rim: 0.1 });
+  const parts = [];
+  // base trim grounds the building and fakes a contact-shadow
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.14, 0.42, d + 0.14), trimMat); base.position.y = 0.21; parts.push(base);
+  // facade-textured floors
+  const g0 = new THREE.Mesh(new THREE.BoxGeometry(w, 2.4, d), wall); g0.position.y = 1.42; parts.push(g0);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(w + 0.18, 0.26, d + 0.18), wood); beam.position.y = 2.74; parts.push(beam);
+  const g1 = new THREE.Mesh(new THREE.BoxGeometry(w - 0.2, 1.7, d - 0.2), wall); g1.position.y = 3.55; parts.push(g1);
+  // a door on the shopfront
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.5, 0.1), toonMat('#4a3527', { rim: 0.1 })); door.position.set(-w * 0.16, 0.97, d / 2 + 0.05); parts.push(door);
+  // roof: gabled (most) or flat with a parapet
+  if ((seed % 3) === 0) {
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.4, d + 0.4), roofMat); slab.position.y = 4.55; parts.push(slab);
+    const para = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.5, d + 0.4), wallPlain); para.position.y = 4.95; para.scale.set(0.9, 1, 0.9); parts.push(para);
+  } else {
+    const rw = w + 1.0;
+    const slabGeo = new THREE.BoxGeometry(rw, 0.32, d / 1.6 + 0.7);
+    const rfL = new THREE.Mesh(slabGeo, roofMat); rfL.position.set(0, 4.85, -d / 4); rfL.rotation.x = -0.62; parts.push(rfL);
+    const rfR = new THREE.Mesh(slabGeo, roofMat); rfR.position.set(0, 4.85, d / 4); rfR.rotation.x = 0.62; parts.push(rfR);
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(rw, 0.3, 0.3), roofMat); ridge.position.y = 5.34; parts.push(ridge);
+  }
+  // a chimney on some
+  if ((seed % 4) === 1) { const ch = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.5), trimMat); ch.position.set(w * 0.28, 5.2, -d * 0.18); parts.push(ch); }
+  // hanging red lantern at the shopfront corner
+  const lant = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.32, 5, 10), toonMat('#e06048', { emissive: '#e85a2a', emissiveIntensity: 0.6, rim: 0.3 }));
+  lant.position.set(w / 2 - 0.35, 2.5, d / 2 + 0.22); parts.push(lant);
+  parts.forEach(m => { m.castShadow = true; m.receiveShadow = true; g.add(m); });
+  g.scale.set(1, 0.85 + (Math.abs(seed) % 5) * 0.18, 1); // varied heights (short shops to tall towers)
   return g;
 }
 const TREE_GREENS = ['#6f9648', '#7fb060', '#5d8842', '#86ac56'];
@@ -749,6 +792,7 @@ function makePaperLantern(dir) {
         const faceTarget = up.clone().applyAxisAngle(sideAxis, i * 0.072).normalize();
         placeOnPlanet(b, dir, { faceDir: tangentToward(dir, faceTarget) });
         scene.add(b);
+        addCollider(b.position, 1.7);
         claim(dir, 0.038);
       }
     }
@@ -760,6 +804,7 @@ function makePaperLantern(dir) {
   const shrine = makeShrine();
   placeOnPlanet(shrine, farEnd, { faceDir: tangentToward(farEnd, up) });
   scene.add(shrine);
+  addCollider(shrine.position, 2.6);
   claim(farEnd, 0.07);
   // stone lanterns lining the street
   for (let i = -2; i <= 2; i++) {
@@ -769,6 +814,7 @@ function makePaperLantern(dir) {
       const sl = makeStoneLantern();
       placeOnPlanet(sl, dir);
       scene.add(sl);
+      addCollider(sl.position, 0.85);
       claim(dir, 0.02);
     }
   }
@@ -794,7 +840,7 @@ function makePaperLantern(dir) {
   const sideAxis = new THREE.Vector3().crossVectors(up, streetAxis).normalize();
 
   const ppDir = up.clone().applyAxisAngle(sideAxis, 0.52).applyAxisAngle(streetAxis, 0.16).normalize();
-  if (freeSpot(ppDir, 0.08)) { const pp = makePowerPlant(); placeOnPlanet(pp, ppDir, { faceDir: tangentToward(ppDir, up) }); scene.add(pp); claim(ppDir, 0.08); }
+  if (freeSpot(ppDir, 0.08)) { const pp = makePowerPlant(); placeOnPlanet(pp, ppDir, { faceDir: tangentToward(ppDir, up) }); scene.add(pp); addCollider(pp.position, 4.2); claim(ppDir, 0.08); }
 
   const twDir = up.clone().applyAxisAngle(sideAxis, -0.58).applyAxisAngle(streetAxis, -0.12).normalize();
   if (freeSpot(twDir, 0.05)) { const tw = makeTower(); placeOnPlanet(tw, twDir, { spin: 0.4 }); scene.add(tw); claim(twDir, 0.05); }
@@ -813,7 +859,7 @@ function makePaperLantern(dir) {
     if (!freeSpot(dir, 0.045)) continue;
     const b = makeBuilding(200 + i * 5 + (side > 0 ? 2 : 0));
     placeOnPlanet(b, dir, { faceDir: tangentToward(dir, hUp.clone().applyAxisAngle(hSide, i * 0.07).normalize()) });
-    scene.add(b); claim(dir, 0.04);
+    scene.add(b); addCollider(b.position, 1.7); claim(dir, 0.04);
   }
 }
 
@@ -845,8 +891,54 @@ for (let i = 0; i < 40; i++) {
   const rk = makeRock((_seed >>> 4) % 11);
   placeOnPlanet(rk, dir, { spin: rnd() * 6.28, yOffset: 0.2 });
   scene.add(rk);
+  addCollider(rk.position, 1.0);
   claim(dir, 0.02);
 }
+
+// Flowers - tiny colourful instanced dabs of life across the grass
+{
+  const fgeo = new THREE.ConeGeometry(0.1, 0.32, 5); fgeo.translate(0, 0.16, 0);
+  const fmat = toonMat('#ffffff', { rim: 0 });
+  const FLOWER_N = isMobile ? 220 : 440;
+  const fim = new THREE.InstancedMesh(fgeo, fmat, FLOWER_N);
+  fim.receiveShadow = true;
+  const fdum = new THREE.Object3D();
+  const fcols = ['#ff7a9c', '#ffd24a', '#ff9a4a', '#c77dff', '#ffffff', '#ff5a7a', '#8ad0ff'];
+  let fplaced = 0;
+  for (let i = 0; i < FLOWER_N * 2 && fplaced < FLOWER_N; i++) {
+    const dir = randDir();
+    if (dir.dot(townDir) > Math.cos(0.17)) continue; // keep the plaza clear
+    const rr = surfaceRadius(dir) + 0.05;
+    fdum.position.copy(dir).multiplyScalar(rr);
+    orientUp(fdum, dir, null);
+    const sc = 0.6 + rnd() * 0.9; fdum.scale.set(sc, sc, sc); fdum.updateMatrix();
+    fim.setMatrixAt(fplaced, fdum.matrix);
+    fim.setColorAt(fplaced, new THREE.Color(fcols[Math.floor(rnd() * fcols.length) % fcols.length]));
+    fplaced++;
+  }
+  fim.count = fplaced; fim.instanceMatrix.needsUpdate = true; if (fim.instanceColor) fim.instanceColor.needsUpdate = true;
+  scene.add(fim);
+}
+
+// Drifting clouds around the planet (soft low-poly puffs at altitude)
+const clouds = [];
+function placeCloud(cl) { const u = cl.userData; cl.position.copy(u.dir).multiplyScalar(u.alt); orientUp(cl, u.dir, null); }
+{
+  const cloudMat = toonMat('#fbfdff', { rim: 0.04 });
+  const CLOUD_N = isMobile ? 5 : 8;
+  for (let i = 0; i < CLOUD_N; i++) {
+    const cl = new THREE.Group();
+    const n = 3 + (i % 3);
+    for (let j = 0; j < n; j++) {
+      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5 + rnd() * 1.3, 1), cloudMat);
+      b.position.set((j - n / 2) * 1.7, rnd() * 0.6, rnd() * 1.2 - 0.6); b.scale.y = 0.58;
+      cl.add(b);
+    }
+    cl.userData = { axis: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), dir: randDir(), alt: PLANET_R + 13 + rnd() * 11, speed: 0.02 + rnd() * 0.03 };
+    placeCloud(cl); scene.add(cl); clouds.push(cl);
+  }
+}
+function updateClouds(dt) { for (const cl of clouds) { const u = cl.userData; u.dir.applyAxisAngle(u.axis, u.speed * dt).normalize(); placeCloud(cl); } }
 
 // Scattered low bushes for ground texture (instanced for perf)
 {
@@ -907,14 +999,24 @@ const traveler = new THREE.Group();
   const cloak = toonMat('#5f88a6', { rim: 0.3 });
   const skin = toonMat('#eab98e', { rim: 0.28 });
   const hatCol = toonMat('#d2b072', { rim: 0.22 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 0.85, 6, 14), cloak); body.position.y = 0.95; body.castShadow = true; traveler.add(body);
-  const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.78, 0.95, 12), cloak); skirt.position.y = 0.55; skirt.castShadow = true; traveler.add(skirt);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.37, 16, 16), skin); head.position.y = 1.82; head.castShadow = true; traveler.add(head);
-  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.66, 0.46, 14), hatCol); hat.position.y = 2.14; hat.castShadow = true; traveler.add(hat);
-  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.68, 0.06, 14), hatCol); brim.position.y = 1.98; traveler.add(brim);
-  // a little satchel (courier!)
-  const bag = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.25), toonMat('#b06a3a', { rim: 0.2 })); bag.position.set(0.45, 1.0, -0.1); bag.castShadow = true; traveler.add(bag);
-  traveler.userData = { body, head, hat, brim, skirt, bag };
+  const dark = toonMat('#3f5566', { rim: 0.2 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.7, 6, 14), cloak); body.position.y = 1.08; body.castShadow = true; traveler.add(body);
+  const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.6, 0.72, 12), cloak); skirt.position.y = 0.74; skirt.castShadow = true; traveler.add(skirt);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 16), skin); head.position.y = 1.86; head.castShadow = true; traveler.add(head);
+  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.42, 14), hatCol); hat.position.y = 2.14; hat.castShadow = true; traveler.add(hat);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.66, 0.66, 0.06, 14), hatCol); brim.position.y = 2.0; traveler.add(brim);
+  const bag = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.22), toonMat('#b06a3a', { rim: 0.2 })); bag.position.set(0.42, 1.05, -0.12); bag.castShadow = true; traveler.add(bag);
+  // limbs as pivots (shoulders / hips) so they swing in a walk cycle
+  function limb(rad, len, mat, px, py) {
+    const pivot = new THREE.Group(); pivot.position.set(px, py, 0);
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(rad, len, 4, 8), mat); m.position.y = -(len / 2 + rad); m.castShadow = true;
+    pivot.add(m); traveler.add(pivot); return pivot;
+  }
+  const armL = limb(0.12, 0.36, cloak, -0.44, 1.32);
+  const armR = limb(0.12, 0.36, cloak, 0.44, 1.32);
+  const legL = limb(0.14, 0.36, dark, -0.18, 0.74);
+  const legR = limb(0.14, 0.36, dark, 0.18, 0.74);
+  traveler.userData = { body, head, hat, brim, skirt, bag, armL, armR, legL, legR };
 }
 // inner pivot so we can bob/lean without fighting the surface orientation
 const travelerPivot = new THREE.Group();
@@ -923,6 +1025,10 @@ scene.add(travelerPivot);
 
 let playerDir = townDir.clone().applyAxisAngle(new THREE.Vector3().crossVectors(townDir, sunDir).normalize(), -0.22).normalize();
 const facingTangent = tangentToward(playerDir, townDir);   // start facing the town
+// Camera look direction: parallel-transported as you walk (so it does NOT spin),
+// rotated only by the player dragging. This is the fix for the "joystick spins" feel.
+const camForward = tangentToward(playerDir, townDir).clone();
+function rotateCamYaw(d) { camForward.applyAxisAngle(playerDir, d); camForward.addScaledVector(playerDir, -camForward.dot(playerDir)); camForward.normalize(); }
 const facingTarget = facingTangent.clone();
 
 // ----------------------------------------------------------------------------
@@ -1065,11 +1171,11 @@ const keys = {};
 window.addEventListener('keydown', (e) => { keys[e.code] = true; if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault(); }, { passive: false });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-const orbit = { yaw: 0, pitch: 0.5, dist: isMobile ? 19 : 15, targetDist: isMobile ? 19 : 15 };
+const orbit = { yaw: 0, pitch: 0.64, dist: isMobile ? 23 : 17, targetDist: isMobile ? 23 : 17 };
 let dragging = false, lastX = 0, lastY = 0, dragPointerId = null;
 const canvas = renderer.domElement;
 canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; dragging = true; lastX = e.clientX; lastY = e.clientY; dragPointerId = e.pointerId; try { canvas.setPointerCapture(e.pointerId); } catch (err) {} }, { passive: true });
-canvas.addEventListener('pointermove', (e) => { if (!dragging || e.pointerType === 'touch') return; const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; orbit.yaw -= dx * 0.005; orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.004, 0.1, 1.35); }, { passive: true });
+canvas.addEventListener('pointermove', (e) => { if (!dragging || e.pointerType === 'touch') return; const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; rotateCamYaw(-dx * 0.005); orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.004, 0.12, 1.4); }, { passive: true });
 window.addEventListener('pointerup', (e) => { if (e.pointerId === dragPointerId) { dragging = false; dragPointerId = null; } });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); orbit.targetDist = THREE.MathUtils.clamp(orbit.targetDist + e.deltaY * 0.014, 8, 70); }, { passive: false });
 
@@ -1109,7 +1215,7 @@ window.addEventListener('touchmove', (e) => {
       joyKnob.style.left = (50 + (dx / max) * 38) + '%'; joyKnob.style.top = (50 + (dy / max) * 38) + '%';
     } else if (touchLook.active && t.identifier === touchLook.id) {
       const dx = t.clientX - touchLook.lastX, dy = t.clientY - touchLook.lastY; touchLook.lastX = t.clientX; touchLook.lastY = t.clientY;
-      orbit.yaw -= dx * 0.006; orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.005, 0.1, 1.35);
+      rotateCamYaw(-dx * 0.006); orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.005, 0.12, 1.4);
     }
   }
 }, { passive: true });
@@ -1153,9 +1259,37 @@ function animate() {
   updateWisp(dt);
   updateLanterns(dt);
   updateParticles(dt, wind);
+  updateClouds(dt);
   updatePuffs(dt, _up.copy(playerDir));
   updateAudio(dt, wind);
   composer.render();
+}
+
+// Resolve collisions by sliding the player out of any solid prop (on the sphere)
+const _cn = new THREE.Vector3();
+function resolveCollisions() {
+  for (let iter = 0; iter < 3; iter++) {
+    const surfR = surfaceRadius(playerDir);
+    _playerPos.copy(playerDir).multiplyScalar(surfR);
+    let hit = false;
+    for (let k = 0; k < colliders.length; k++) {
+      const c = colliders[k];
+      const dx = _playerPos.x - c.x, dy = _playerPos.y - c.y, dz = _playerPos.z - c.z;
+      const rr = c.r + PLAYER_R;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < rr * rr) {
+        const d = Math.sqrt(d2) || 0.0001;
+        _cn.set(dx / d, dy / d, dz / d);
+        _cn.addScaledVector(playerDir, -_cn.dot(playerDir)); // slide along the tangent plane
+        if (_cn.lengthSq() < 1e-6) _cn.copy(facingTangent);
+        _cn.normalize();
+        _playerPos.set(c.x, c.y, c.z).addScaledVector(_cn, rr);
+        playerDir.copy(_playerPos).normalize();
+        hit = true;
+      }
+    }
+    if (!hit) break;
+  }
 }
 
 function updateMovement(dt) {
@@ -1167,9 +1301,8 @@ function updateMovement(dt) {
   if (keys['KeyA'] || keys['ArrowLeft']) r -= 1;
   if (touchMove.active) { f -= touchMove.dy; r += touchMove.dx; }
 
-  // camera-forward projected onto the tangent plane
-  camera.getWorldDirection(_camFwd);
-  _camFwdT.copy(_camFwd).addScaledVector(_up, -_camFwd.dot(_up));
+  // movement basis from the (parallel-transported) camera forward, projected to tangent
+  _camFwdT.copy(camForward).addScaledVector(_up, -camForward.dot(_up));
   if (_camFwdT.lengthSq() < 1e-6) _camFwdT.copy(facingTangent);
   _camFwdT.normalize();
   _camRightT.crossVectors(_up, _camFwdT).normalize(); // screen-right on the surface
@@ -1177,28 +1310,35 @@ function updateMovement(dt) {
   const inputMag = Math.hypot(f, r);
   const hasInput = inputMag > 0.06;
   const stroll = keys['ShiftLeft'] || keys['ShiftRight'];
-  const maxSpeed = stroll ? 4.5 : 9.5;
+  const maxSpeed = stroll ? 4.0 : 8.0;
 
   if (hasInput) {
     _moveT.set(0, 0, 0).addScaledVector(_camFwdT, f).addScaledVector(_camRightT, r);
     if (_moveT.lengthSq() > 1e-6) _moveT.normalize();
-    player.speed = THREE.MathUtils.damp(player.speed, maxSpeed * Math.min(1, inputMag), 7, dt);
+    player.speed = THREE.MathUtils.damp(player.speed, maxSpeed * Math.min(1, inputMag), 8, dt);
     player.idleTime = 0;
     facingTarget.copy(_moveT);
   } else {
-    player.speed = THREE.MathUtils.damp(player.speed, 0, 9, dt);
+    player.speed = THREE.MathUtils.damp(player.speed, 0, 10, dt);
     player.idleTime += dt;
   }
 
-  // advance position along the great circle in the move direction
+  // advance along the great circle; parallel-transport the camera forward with us so
+  // "forward" stays consistent relative to the surface (no spinning), then resolve collisions
   if (player.speed > 0.001 && hasInput) {
     _axis.crossVectors(_up, _moveT);
     if (_axis.lengthSq() > 1e-7) {
       _axis.normalize();
       const ang = (player.speed * dt) / PLANET_R;
       playerDir.applyAxisAngle(_axis, ang).normalize();
+      camForward.applyAxisAngle(_axis, ang);
     }
+    resolveCollisions();
   }
+  // keep camForward tangent to the (possibly new) surface normal
+  camForward.addScaledVector(playerDir, -camForward.dot(playerDir));
+  if (camForward.lengthSq() < 1e-6) camForward.copy(facingTangent);
+  camForward.normalize();
 
   // smooth facing toward travel direction, kept tangent to the (new) surface
   facingTangent.addScaledVector(playerDir, -facingTangent.dot(playerDir));
@@ -1223,12 +1363,11 @@ function updateMovement(dt) {
 function updateCamera(dt) {
   _up.copy(playerDir);
   orbit.dist = THREE.MathUtils.damp(orbit.dist, orbit.targetDist, 6, dt);
-  // camera trails behind facing, rotated by user yaw around the surface normal
-  _camDir.copy(facingTangent).applyAxisAngle(_up, orbit.yaw);
-  _camDir.addScaledVector(_up, -_camDir.dot(_up));
-  if (_camDir.lengthSq() < 1e-6) _camDir.set(1, 0, 0);
+  // camera looks along camForward (user-controlled + parallel-transported); never auto-spins
+  _camDir.copy(camForward).addScaledVector(_up, -camForward.dot(_up));
+  if (_camDir.lengthSq() < 1e-6) _camDir.copy(facingTangent);
   _camDir.normalize();
-  _target.copy(travelerPivot.position).addScaledVector(_up, 2.2);
+  _target.copy(travelerPivot.position).addScaledVector(_up, 2.4);
   _desired.copy(_target).addScaledVector(_camDir, -orbit.dist * Math.cos(orbit.pitch)).addScaledVector(_up, orbit.dist * Math.sin(orbit.pitch));
   camera.up.copy(_up);
   camera.position.lerp(_desired, Math.min(1, dt * 5));
@@ -1238,12 +1377,15 @@ function updateCamera(dt) {
 function updateCharacterAnim(dt) {
   const ud = traveler.userData;
   const moving = player.speed > 0.4;
-  player.bob += dt * (moving ? 6 + player.speed * 1.2 : 1.6);
-  const bobAmt = moving ? 0.12 * Math.min(1, player.speed / 7) : 0.04;
-  const bob = Math.sin(player.bob) * bobAmt;
-  ud.body.position.y = 0.95 + bob; ud.head.position.y = 1.82 + bob * 1.1; ud.hat.position.y = 2.14 + bob * 1.1; ud.brim.position.y = 1.98 + bob * 1.1;
-  // lean into travel (rotate the inner traveler around its local X)
-  const leanTarget = moving ? Math.min(0.22, player.speed * 0.028) : 0;
+  player.bob += dt * (moving ? 7 + player.speed * 1.1 : 1.6);
+  const bob = Math.sin(player.bob) * (moving ? 0.06 * Math.min(1, player.speed / 7) : 0.03);
+  ud.body.position.y = 1.08 + bob; ud.head.position.y = 1.86 + bob * 1.1; ud.hat.position.y = 2.14 + bob * 1.1; ud.brim.position.y = 2.0 + bob * 1.1;
+  // walk cycle: legs alternate, arms counter-swing (swing is 0 when idle)
+  const sp = moving ? Math.min(1, player.speed / 6) : 0;
+  const swing = Math.sin(player.bob) * sp * 0.7;
+  ud.legL.rotation.x = swing; ud.legR.rotation.x = -swing;
+  ud.armL.rotation.x = -swing * 0.8; ud.armR.rotation.x = swing * 0.8;
+  const leanTarget = moving ? Math.min(0.2, player.speed * 0.026) : 0;
   traveler.rotation.x = THREE.MathUtils.damp(traveler.rotation.x, leanTarget, 6, dt);
 }
 
@@ -1361,7 +1503,7 @@ function showFinale() {
 // ----------------------------------------------------------------------------
 // Resize / focus
 // ----------------------------------------------------------------------------
-function onResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); composer.setSize(window.innerWidth, window.innerHeight); }
+function onResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); composer.setSize(window.innerWidth, window.innerHeight); tiltH.uniforms.dir.value.set(1 / window.innerWidth, 0); tiltV.uniforms.dir.value.set(0, 1 / window.innerHeight); }
 window.addEventListener('resize', onResize);
 window.addEventListener('blur', () => { running = false; });
 window.addEventListener('focus', () => { if (started && !running) { running = true; clock.getDelta(); animate(); } });
@@ -1374,7 +1516,7 @@ let started = false;
 const introEl = document.getElementById('intro');
 function frameInitialCamera() {
   _up.copy(playerDir);
-  _camDir.copy(facingTangent).applyAxisAngle(_up, orbit.yaw); _camDir.addScaledVector(_up, -_camDir.dot(_up)).normalize();
+  _camDir.copy(camForward).addScaledVector(_up, -camForward.dot(_up)).normalize();
   const surfR = surfaceRadius(playerDir);
   travelerPivot.position.copy(playerDir).multiplyScalar(surfR);
   orientUp(travelerPivot, playerDir, facingTangent);
@@ -1402,9 +1544,11 @@ window.__game = {
   // deterministic sim stepping for verification (bypasses background rAF throttling)
   step: (codes = ['KeyW'], n = 90, dt = 0.033) => {
     for (const c of codes) keys[c] = true;
-    for (let i = 0; i < n; i++) { updateMovement(dt); updateLanterns(dt); }
+    for (let i = 0; i < n; i++) { updateMovement(dt); updateCamera(dt); updateCharacterAnim(dt); updateLanterns(dt); }
     for (const c of codes) keys[c] = false;
-    return { litCount, dir: [playerDir.x, playerDir.y, playerDir.z] };
+    let minGap = Infinity;
+    for (const c of colliders) { const dx = travelerPivot.position.x - c.x, dy = travelerPivot.position.y - c.y, dz = travelerPivot.position.z - c.z; const g = Math.sqrt(dx*dx+dy*dy+dz*dz) - (c.r + PLAYER_R); if (g < minGap) minGap = g; }
+    return { litCount, minGap: Math.round(minGap * 100) / 100, dir: [playerDir.x, playerDir.y, playerDir.z] };
   },
 };
 </script>
