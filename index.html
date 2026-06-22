@@ -1385,13 +1385,17 @@ const PETAL_N = Q.petals; let petals;
 // Audio (generative ambient, started on Begin) + mute
 // ----------------------------------------------------------------------------
 const audio = { ctx: null, master: null, muted: false, started: false, windGain: null, noiseFilter: null, birdTimer: 0 };
+// Soundtrack (uploaded lo-fi track); plays on Begin, fades in, tied to the mute button
+const music = new Audio('Harbor%20Lights%20Lo-Fi%20Drift.mp3');
+music.loop = true; music.preload = 'auto'; music.volume = 0;
+const MUSIC_VOL = 0.55;
 function initAudio() {
   if (audio.started) return;
   try { audio.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
   const ctx = audio.ctx;
   audio.master = ctx.createGain(); audio.master.gain.value = 0; audio.master.connect(ctx.destination);
   audio.master.gain.setValueAtTime(0, ctx.currentTime);
-  audio.master.gain.linearRampToValueAtTime(audio.muted ? 0 : 0.5, ctx.currentTime + 3);
+  audio.master.gain.linearRampToValueAtTime(audio.muted ? 0 : 0.3, ctx.currentTime + 3);
   const bufSize = 2 * ctx.sampleRate;
   const noiseBuf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
   const out = noiseBuf.getChannelData(0); for (let i = 0; i < bufSize; i++) out[i] = Math.random() * 2 - 1;
@@ -1399,7 +1403,7 @@ function initAudio() {
   audio.noiseFilter = ctx.createBiquadFilter(); audio.noiseFilter.type = 'lowpass'; audio.noiseFilter.frequency.value = 430; audio.noiseFilter.Q.value = 0.6;
   audio.windGain = ctx.createGain(); audio.windGain.gain.value = 0.1;
   noise.connect(audio.noiseFilter); audio.noiseFilter.connect(audio.windGain); audio.windGain.connect(audio.master); noise.start();
-  const padGain = ctx.createGain(); padGain.gain.value = 0.06;
+  const padGain = ctx.createGain(); padGain.gain.value = 0.0; // pad off: the music carries the harmony
   const padFilter = ctx.createBiquadFilter(); padFilter.type = 'lowpass'; padFilter.frequency.value = 950;
   padFilter.connect(padGain); padGain.connect(audio.master);
   [130.81, 196.0, 261.63].forEach((f, i) => { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * (1 + (i - 1) * 0.003); const og = ctx.createGain(); og.gain.value = 0.5 / 3; o.connect(og); og.connect(padFilter); o.start(); });
@@ -1420,7 +1424,7 @@ function lanternChime(index) {
     o.connect(g); g.connect(audio.master); o.start(t); o.stop(t + 2.0); });
 }
 const muteBtn = document.getElementById('muteBtn');
-function setMuted(m) { audio.muted = m; muteBtn.textContent = m ? 'x' : '~'; if (audio.master && audio.ctx) { audio.master.gain.cancelScheduledValues(audio.ctx.currentTime); audio.master.gain.linearRampToValueAtTime(m ? 0 : 0.5, audio.ctx.currentTime + 0.4); } }
+function setMuted(m) { audio.muted = m; muteBtn.textContent = m ? 'x' : '~'; music.muted = m; if (audio.master && audio.ctx) { audio.master.gain.cancelScheduledValues(audio.ctx.currentTime); audio.master.gain.linearRampToValueAtTime(m ? 0 : 0.3, audio.ctx.currentTime + 0.4); } }
 muteBtn.addEventListener('click', () => setMuted(!audio.muted));
 
 // ----------------------------------------------------------------------------
@@ -1828,6 +1832,7 @@ frameInitialCamera();
 document.getElementById('beginBtn').addEventListener('click', () => {
   if (started) return; started = true; initAudio();
   if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume();
+  music.play().then(() => { let mv = 0; const fade = setInterval(() => { mv = Math.min(MUSIC_VOL, mv + 0.02); music.volume = audio.muted ? 0 : mv; if (mv >= MUSIC_VOL) clearInterval(fade); }, 90); }).catch(() => {});
   const fsEl = document.documentElement;
   (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen || (() => {})).call(fsEl);
   introEl.classList.add('hidden'); setTimeout(() => { introEl.style.display = 'none'; }, 1200);
@@ -1859,6 +1864,7 @@ window.__game = {
     return { deliveries };
   },
   get deliveries() { return deliveries; },
+  musicState: () => ({ paused: music.paused, t: Math.round(music.currentTime * 10) / 10, dur: Math.round(music.duration || 0), ready: music.readyState, muted: music.muted }),
 };
 </script>
 </body>
