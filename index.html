@@ -227,8 +227,8 @@ const COL = {
   outline:    new THREE.Color('#2a2420'), // dark inky outline
 };
 
-const PLANET_R = 46;       // planet radius
-const SURF_AMP = 2.4;      // gentle hill amplitude on the surface
+const PLANET_R = 54;       // planet radius (bigger world to explore)
+const SURF_AMP = 3.0;      // gentle hill amplitude on the surface
 
 // ----------------------------------------------------------------------------
 // Smooth sampleable surface displacement (so we can walk & place on hills)
@@ -274,10 +274,10 @@ const PR = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2);
 const Q = {
   shadowMap: isMobile ? 1024 : 2048,
   msaa:      isMobile ? 2 : 4,
-  fireflies: isMobile ? 130 : 260,
-  petals:    isMobile ? 90 : 200,
-  bushes:    isMobile ? 170 : 340,
-  trees:     isMobile ? 85 : 140,
+  fireflies: isMobile ? 150 : 340,
+  petals:    isMobile ? 100 : 240,
+  bushes:    isMobile ? 240 : 560,
+  trees:     isMobile ? 120 : 240,
   bloom:     isMobile ? 0.42 : 0.55,
 };
 
@@ -346,6 +346,51 @@ const tiltV = new ShaderPass(TiltShiftShader); tiltV.uniforms.dir.value.set(0, 1
 composer.addPass(tiltH);
 composer.addPass(tiltV);
 composer.addPass(new OutputPass());
+// Research-driven final pass: hand-drawn ink edges (Sobel + UV wobble) + posterize +
+// teal-shadow / warm-highlight colour grade. Runs in display space, last = to screen.
+const InkGradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    texel: { value: new THREE.Vector2(1 / window.innerWidth, 1 / window.innerHeight) },
+    uInk: { value: isMobile ? 0.5 : 0.62 },
+    uWobble: { value: 1.3 },
+    uPost: { value: 30.0 },
+    uSat: { value: 0.94 },
+  },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: [
+    'uniform sampler2D tDiffuse; uniform vec2 texel; uniform float uInk; uniform float uWobble; uniform float uPost; uniform float uSat; varying vec2 vUv;',
+    'float lum(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }',
+    'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }',
+    'void main(){',
+    '  vec2 wob = (vec2(hash(vUv*vec2(220.0,180.0)), hash(vUv*vec2(180.0,220.0)+3.3)) - 0.5) * uWobble * texel;',
+    '  vec2 uv = vUv + wob;',
+    '  float tl=lum(texture2D(tDiffuse,uv+texel*vec2(-1.0,-1.0)).rgb);',
+    '  float  l=lum(texture2D(tDiffuse,uv+texel*vec2(-1.0, 0.0)).rgb);',
+    '  float bl=lum(texture2D(tDiffuse,uv+texel*vec2(-1.0, 1.0)).rgb);',
+    '  float  t=lum(texture2D(tDiffuse,uv+texel*vec2( 0.0,-1.0)).rgb);',
+    '  float  b=lum(texture2D(tDiffuse,uv+texel*vec2( 0.0, 1.0)).rgb);',
+    '  float tr=lum(texture2D(tDiffuse,uv+texel*vec2( 1.0,-1.0)).rgb);',
+    '  float  r=lum(texture2D(tDiffuse,uv+texel*vec2( 1.0, 0.0)).rgb);',
+    '  float br=lum(texture2D(tDiffuse,uv+texel*vec2( 1.0, 1.0)).rgb);',
+    '  float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;',
+    '  float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;',
+    '  float g = sqrt(gx*gx + gy*gy);',
+    '  float ink = smoothstep(0.32, 0.9, g) * uInk;',
+    '  vec3 c = texture2D(tDiffuse, vUv).rgb;',
+    '  c = floor(c * uPost + 0.5) / uPost;',                        // posterize -> flat illustrated banding
+    '  float L = lum(c);',
+    '  c = mix(vec3(L), c, uSat);',                                  // gentle desaturate
+    '  c += vec3(0.05,0.13,0.12) * (1.0 - L) * 0.5;',                // lift shadows toward teal
+    '  c *= mix(vec3(1.0), vec3(1.02,0.99,0.93), L*0.3);',           // warm the highlights
+    '  c = mix(c, vec3(0.14,0.12,0.12), ink);',                      // composite ink lines
+    '  gl_FragColor = vec4(clamp(c,0.0,1.0), 1.0);',
+    '}',
+  ].join('\n'),
+};
+const inkGrade = new ShaderPass(InkGradeShader);
+inkGrade.uniforms.texel.value.set(1 / window.innerWidth, 1 / window.innerHeight);
+composer.addPass(inkGrade);
 
 // ----------------------------------------------------------------------------
 // Shared toon gradient ramp - soft pastel banding (gentle Ghibli shading)
@@ -741,6 +786,62 @@ function makeWaterPatch(dir, r) {
   scene.add(g);
   return g;
 }
+// ---- Landmark builders (fill the bigger world) ----
+function makePagoda() {
+  const g = new THREE.Group();
+  const wall = toonMat('#efe6d2', { rim: 0.14 });
+  const red = toonMat('#b34a3a', { rim: 0.18 });
+  const roofMat = toonMat('#3f5560', { rim: 0.14 });
+  let y = 0;
+  for (let i = 0; i < 4; i++) {
+    const sc = 1 - i * 0.16, h = 1.9;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.0 * sc, h, 3.0 * sc), i === 0 ? red : wall);
+    body.position.y = y + h / 2; body.castShadow = true; body.receiveShadow = true; g.add(body);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.7 * sc, 1.0, 4), roofMat);
+    roof.position.y = y + h + 0.35; roof.rotation.y = Math.PI / 4; roof.castShadow = true; g.add(roof);
+    y += h + 0.7;
+  }
+  const finial = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, 1.2, 8), toonMat('#d9b44a')); finial.position.y = y + 0.4; g.add(finial);
+  return g;
+}
+const spinners = []; // animated parts (windmill blades) spun each frame
+function makeWindmill() {
+  const g = new THREE.Group();
+  const stone = toonMat('#dccfb6', { rim: 0.14 });
+  const woodM = toonMat('#7a5638', { rim: 0.18 });
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.0, 6.4, 14), stone); tower.position.y = 3.2; tower.castShadow = true; tower.receiveShadow = true; g.add(tower);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(1.8, 1.5, 14), toonMat('#7c8a90', { rim: 0.14 })); cap.position.y = 7.0; cap.castShadow = true; g.add(cap);
+  const hub = new THREE.Group(); hub.position.set(0, 6.4, 2.0);
+  const cen = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.5, 8), woodM); cen.rotation.x = Math.PI / 2; hub.add(cen);
+  for (let i = 0; i < 4; i++) {
+    const arm = new THREE.Group(); arm.rotation.z = i * Math.PI / 2;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.6, 0.1), toonMat('#efe6d2', { rim: 0.14 })); blade.position.y = 2.0; blade.castShadow = true; arm.add(blade);
+    hub.add(arm);
+  }
+  g.add(hub); spinners.push(hub);
+  return g;
+}
+function makeWell() {
+  const g = new THREE.Group();
+  const stone = toonMat('#b8b0a0', { rim: 0.16 });
+  const wood = toonMat('#7a5638', { rim: 0.18 });
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.1, 1.0, 14), stone); ring.position.y = 0.5; ring.castShadow = true; ring.receiveShadow = true; g.add(ring);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(0.85, 14), toonMat('#67c7c1', { emissive: '#1f5e5e', emissiveIntensity: 0.15 })); water.rotation.x = -Math.PI / 2; water.position.y = 0.86; g.add(water);
+  for (const sx of [-0.9, 0.9]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.6, 0.16), wood); p.position.set(sx, 1.3, 0); p.castShadow = true; g.add(p); }
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.16, 0.16), wood); beam.position.y = 2.1; g.add(beam);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.5, 0.8, 4), toonMat('#8a8782')); roof.position.y = 2.6; roof.rotation.y = Math.PI / 4; roof.castShadow = true; g.add(roof);
+  return g;
+}
+function makeStall(seed) {
+  const g = new THREE.Group();
+  const wood = toonMat('#8a5a38', { rim: 0.18 });
+  const awn = ['#c0503f', '#3f6fae', '#4f7d57', '#d99a3c'][seed % 4];
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.0, 1.2), wood); counter.position.y = 0.5; counter.castShadow = true; counter.receiveShadow = true; g.add(counter);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 1.4), toonMat('#a06a3a')); top.position.y = 1.06; g.add(top);
+  for (const sx of [-1.1, 1.1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.0, 0.12), wood); p.position.set(sx, 1.0, -0.5); g.add(p); }
+  const awning = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.1, 1.5), toonMat(awn, { rim: 0.1 })); awning.position.set(0, 2.0, 0.15); awning.rotation.x = -0.3; awning.castShadow = true; g.add(awning);
+  return g;
+}
 
 // ----------------------------------------------------------------------------
 // Paper lanterns (the gentle goal) - lit by proximity
@@ -863,6 +964,42 @@ function makePaperLantern(dir) {
   }
 }
 
+// Landmarks (pagoda, windmill, well), market stalls, and a third hamlet to fill the world
+{
+  const B = new THREE.Vector3().crossVectors(townDir, sunDir).normalize();
+  const C = new THREE.Vector3().crossVectors(townDir, B).normalize();
+  const placeLandmark = (dir, obj, r, faceTown) => {
+    if (!freeSpot(dir, 0.08)) return;
+    placeOnPlanet(obj, dir, faceTown ? { faceDir: tangentToward(dir, townDir) } : { spin: rnd() * 6.28 });
+    scene.add(obj); addCollider(obj.position, r); claim(dir, 0.08);
+  };
+  placeLandmark(dirNear(B, 0.45), makePagoda(), 2.6, true);
+  placeLandmark(dirNear(C, 0.45), makeWindmill(), 2.2, false);
+  placeLandmark(dirNear(B.clone().multiplyScalar(-1), 0.45), makeWell(), 1.2, false);
+  // market stalls near the main town entrance
+  const sA = (Math.abs(townDir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
+  sA.addScaledVector(townDir, -sA.dot(townDir)).normalize();
+  for (let i = 0; i < 3; i++) {
+    const sd = townDir.clone().applyAxisAngle(sA, -0.20 - i * 0.05).normalize();
+    if (!freeSpot(sd, 0.03)) continue;
+    const st = makeStall(i);
+    placeOnPlanet(st, sd, { faceDir: tangentToward(sd, townDir) });
+    scene.add(st); addCollider(st.position, 1.3); claim(sd, 0.03);
+  }
+  // a third hamlet on the far side
+  const hUp = C.clone().multiplyScalar(-1).normalize();
+  const hS = (Math.abs(hUp.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
+  hS.addScaledVector(hUp, -hS.dot(hUp)).normalize();
+  const hSide = new THREE.Vector3().crossVectors(hUp, hS).normalize();
+  for (let i = -2; i <= 2; i++) for (const side of [-1, 1]) {
+    const dir = hUp.clone().applyAxisAngle(hSide, i * 0.07).applyAxisAngle(hS, side * 0.08).normalize();
+    if (!freeSpot(dir, 0.045)) continue;
+    const b = makeBuilding(300 + i * 5 + (side > 0 ? 2 : 0));
+    placeOnPlanet(b, dir, { faceDir: tangentToward(dir, hUp.clone().applyAxisAngle(hSide, i * 0.07).normalize()) });
+    scene.add(b); addCollider(b.position, 1.7); claim(dir, 0.04);
+  }
+}
+
 // Trees scattered over the planet (mostly green, a little sakura), denser, avoiding towns
 for (let i = 0; i < Q.trees; i++) {
   const dir = randDir();
@@ -899,7 +1036,7 @@ for (let i = 0; i < 40; i++) {
 {
   const fgeo = new THREE.ConeGeometry(0.1, 0.32, 5); fgeo.translate(0, 0.16, 0);
   const fmat = toonMat('#ffffff', { rim: 0 });
-  const FLOWER_N = isMobile ? 220 : 440;
+  const FLOWER_N = isMobile ? 320 : 780;
   const fim = new THREE.InstancedMesh(fgeo, fmat, FLOWER_N);
   fim.receiveShadow = true;
   const fdum = new THREE.Object3D();
@@ -938,7 +1075,7 @@ function placeCloud(cl) { const u = cl.userData; cl.position.copy(u.dir).multipl
     placeCloud(cl); scene.add(cl); clouds.push(cl);
   }
 }
-function updateClouds(dt) { for (const cl of clouds) { const u = cl.userData; u.dir.applyAxisAngle(u.axis, u.speed * dt).normalize(); placeCloud(cl); } }
+function updateClouds(dt) { for (const cl of clouds) { const u = cl.userData; u.dir.applyAxisAngle(u.axis, u.speed * dt).normalize(); placeCloud(cl); } for (const s of spinners) s.rotation.z += dt * 0.55; }
 
 // Scattered low bushes for ground texture (instanced for perf)
 {
@@ -982,10 +1119,13 @@ function updateClouds(dt) { for (const cl of clouds) { const u = cl.userData; u.
   }
   // scattered lanterns farther out (gives a reason to circle the planet)
   const farDirs = [
-    dirNear(townDir, 0.9), dirNear(townDir, 1.3),
+    dirNear(townDir, 0.7), dirNear(townDir, 1.0), dirNear(townDir, 1.3),
     townDir.clone().multiplyScalar(-1).normalize(),                 // far side
     dirNear(townDir.clone().multiplyScalar(-1), 0.7),
-    dirNear(new THREE.Vector3().crossVectors(townDir, sunDir), 0.6),
+    dirNear(townDir.clone().multiplyScalar(-1), 1.1),
+    dirNear(new THREE.Vector3().crossVectors(townDir, sunDir).normalize(), 0.6),
+    dirNear(new THREE.Vector3().crossVectors(townDir, sunDir).normalize(), 1.1),
+    dirNear(new THREE.Vector3().crossVectors(townDir, sunDir).normalize().multiplyScalar(-1), 0.8),
   ];
   for (const d of farDirs) makePaperLantern(d);
 }
@@ -1177,7 +1317,7 @@ const canvas = renderer.domElement;
 canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; dragging = true; lastX = e.clientX; lastY = e.clientY; dragPointerId = e.pointerId; try { canvas.setPointerCapture(e.pointerId); } catch (err) {} }, { passive: true });
 canvas.addEventListener('pointermove', (e) => { if (!dragging || e.pointerType === 'touch') return; const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; rotateCamYaw(-dx * 0.005); orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + dy * 0.004, 0.12, 1.4); }, { passive: true });
 window.addEventListener('pointerup', (e) => { if (e.pointerId === dragPointerId) { dragging = false; dragPointerId = null; } });
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); orbit.targetDist = THREE.MathUtils.clamp(orbit.targetDist + e.deltaY * 0.014, 8, 70); }, { passive: false });
+canvas.addEventListener('wheel', (e) => { e.preventDefault(); orbit.targetDist = THREE.MathUtils.clamp(orbit.targetDist + e.deltaY * 0.016, 8, 120); }, { passive: false });
 
 const joyEl = document.getElementById('joystick'), joyKnob = document.getElementById('joyKnob');
 const touchMove = { active: false, id: null, dx: 0, dy: 0, cx: 0, cy: 0 };
@@ -1204,7 +1344,7 @@ window.addEventListener('touchstart', (e) => {
 window.addEventListener('touchmove', (e) => {
   if (pinch.active && e.touches.length >= 2) {
     const d = _touchDist(e.touches[0], e.touches[1]);
-    if (d > 0) orbit.targetDist = THREE.MathUtils.clamp(pinch.startTarget * (pinch.startDist / d), 8, 70);
+    if (d > 0) orbit.targetDist = THREE.MathUtils.clamp(pinch.startTarget * (pinch.startDist / d), 8, 120);
     return;
   }
   for (const t of e.changedTouches) {
@@ -1305,7 +1445,7 @@ function updateMovement(dt) {
   _camFwdT.copy(camForward).addScaledVector(_up, -camForward.dot(_up));
   if (_camFwdT.lengthSq() < 1e-6) _camFwdT.copy(facingTangent);
   _camFwdT.normalize();
-  _camRightT.crossVectors(_up, _camFwdT).normalize(); // screen-right on the surface
+  _camRightT.crossVectors(_camFwdT, _up).normalize(); // screen-right on the surface (fwd x up = right)
 
   const inputMag = Math.hypot(f, r);
   const hasInput = inputMag > 0.06;
@@ -1503,7 +1643,7 @@ function showFinale() {
 // ----------------------------------------------------------------------------
 // Resize / focus
 // ----------------------------------------------------------------------------
-function onResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); composer.setSize(window.innerWidth, window.innerHeight); tiltH.uniforms.dir.value.set(1 / window.innerWidth, 0); tiltV.uniforms.dir.value.set(0, 1 / window.innerHeight); }
+function onResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); composer.setSize(window.innerWidth, window.innerHeight); tiltH.uniforms.dir.value.set(1 / window.innerWidth, 0); tiltV.uniforms.dir.value.set(0, 1 / window.innerHeight); inkGrade.uniforms.texel.value.set(1 / window.innerWidth, 1 / window.innerHeight); }
 window.addEventListener('resize', onResize);
 window.addEventListener('blur', () => { running = false; });
 window.addEventListener('focus', () => { if (started && !running) { running = true; clock.getDelta(); animate(); } });
